@@ -1,0 +1,43 @@
+agent:
+  id: "sentinel"
+  name: "SENTINEL"
+  tier: 2
+  role: "QA & Business Monitor"
+  department: development
+  reports_to: clawd
+
+models:
+  primary: "openai/gpt-5.3-codex"
+  fallback: "google-gemini-cli/gemini-2.5-flash"
+  thinking: "medium"
+
+skills:
+  clawhub:
+    - healthcheck
+    - review-pr
+  custom: []
+
+triggers:
+  - event: "heartbeat"
+    interval: "5m"
+    action: "check_uptime"
+  - event: "pr_created"
+    action: "qa_review_pull_request"
+  - event: "task_assigned"
+    filter: { tags: ["qa", "review", "test", "validation", "monitor"] }
+    action: "begin_qa_work"
+
+channels:
+  listen: [telegram, discord]
+  notify: [telegram]
+
+memory:
+  seed_files:
+    - memory/monitoring-targets.md
+    - memory/qa-checklist.md
+    - memory/incident-log.md
+  private: false
+
+delegation:
+  rules: []
+  default: "handle_directly"

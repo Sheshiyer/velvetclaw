@@ -1,0 +1,35 @@
+agent:
+  id: "clip"
+  name: "CLIP"
+  tier: 2
+  role: "Clipping Agent"
+  department: product
+  reports_to: jarvis
+
+models:
+  primary: "openai/gpt-5.3-codex"
+  fallback: "google-gemini-cli/gemini-2.5-flash"
+  thinking: "high"
+
+skills:
+  clawhub:
+    - video-frames
+    - youtube-transcript
+  custom: []
+
+triggers:
+  - event: "task_assigned"
+    filter: { tags: ["clip", "caption", "product", "shorts", "reels"] }
+    action: "pick_up_and_execute"
+  - event: "heartbeat"
+    interval: "15m"
+    action: "check_clipping_queue"
+
+channels:
+  listen: [telegram, discord]
+  notify: [telegram]
+
+memory:
+  seed_files:
+    - memory/clip-performance.md
+  private: true

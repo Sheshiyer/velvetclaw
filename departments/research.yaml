@@ -1,0 +1,42 @@
+# Research Department Coordination
+name: Research
+lead: atlas
+members: [trendy]
+
+coordination:
+  shared_vault: true
+  vault_path: "shared/research/"
+
+  roles:
+    atlas:
+      focus: "Deep research, source verification, structured analysis"
+      authority: "Approve research briefs, assign research tasks to TRENDY"
+    trendy:
+      focus: "Trend detection, viral content scouting, social monitoring"
+      authority: "Flag trends, create trend briefs for ATLAS review"
+
+  communication:
+    internal: "Shared vault — TRENDY writes trend briefs, ATLAS reads and assigns follow-up"
+    external: "ATLAS reports to JARVIS with synthesized intelligence summaries"
+
+  escalation:
+    chain: [atlas, jarvis, owner]
+    triggers:
+      - "Conflicting sources on critical topic"
+      - "Research requires paid data sources or API access"
+      - "Time-sensitive finding requiring immediate org action"
+
+  task_routing:
+    incoming_tags: [research, investigate, analyze, trend, viral, scout]
+    default_assignee: atlas
+    auto_delegate:
+      - tags: [trend, viral, scout] -> trendy
+      - tags: [deep-research, analysis, report] -> atlas
+
+  quality:
+    review_required: true
+    reviewer: atlas
+    standards:
+      - "All claims must have cited sources"
+      - "Distinguish fact from inference"
+      - "Trend briefs must include virality score and relevance assessment"

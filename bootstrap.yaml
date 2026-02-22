@@ -1,0 +1,106 @@
+# Bootstrap Sequence
+# Defines the order of operations and validation checks
+# for self-assembling the agent organization from this repo.
+
+version: "1.0.0"
+
+sequence:
+  1_validate_manifest:
+    action: "Parse and validate manifest.yaml"
+    required: true
+    checks:
+      - "manifest.yaml exists and is valid YAML"
+      - "All referenced agents have directories in agents/"
+      - "All department leads are defined agents"
+      - "No circular delegation references"
+
+  2_create_workspaces:
+    action: "Create OpenClaw agent workspaces"
+    required: true
+    for_each: "manifest.org.hierarchy (all agents)"
+    checks:
+      - "Workspace directory created at ~/.openclaw/workspace-{agent-id}/"
+      - "MANIFEST.yaml copied to workspace"
+      - "IDENTITY.md copied to workspace"
+      - "SOUL.md copied to workspace"
+
+  3_install_global_skills:
+    action: "Install global skills from skill-requirements.yaml"
+    required: true
+    command: "clawhub install {skill} for each global skill"
+    checks:
+      - "Each global skill directory exists in workspace/skills/"
+      - "clawhub verify passes for each skill"
+
+  4_install_per_agent_skills:
+    action: "Install per-agent skills"
+    required: true
+    for_each: "skill-requirements.per_agent"
+    checks:
+      - "Each agent's required skills are installed in their workspace"
+
+  5_copy_custom_skills:
+    action: "Copy repo-local skills to agent workspaces"
+    required: false
+    source: "skills/"
+    checks:
+      - "Custom skill directories copied to relevant agent workspaces"
+
+  6_initialize_templates:
+    action: "Copy ClawVault primitive templates"
+    required: true
+    source: "templates/"
+    target: "Each workspace's templates/ directory"
+    checks:
+      - "task.md, project.md, decision.md, lesson.md exist in each workspace"
+
+  7_seed_memory:
+    action: "Seed agent memory from repo"
+    required: true
+    steps:
+      - "Copy shared memory/ files to each workspace"
+      - "Copy agent-specific MEMORY.md to each workspace"
+      - "Trigger memory indexing"
+    checks:
+      - "MEMORY.md exists in each workspace"
+      - "Shared context files exist in each workspace/memory/"
+
+  8_wire_workflows:
+    action: "Register workflow definitions"
+    required: false
+    source: "workflows/"
+    checks:
+      - "Workflow files parsed without errors"
+      - "All referenced agents exist in manifest"
+
+  9_configure_departments:
+    action: "Apply department coordination rules"
+    required: false
+    source: "departments/"
+    checks:
+      - "Department configs reference valid agents"
+      - "Escalation chains are valid"
+
+  10_final_validation:
+    action: "Run end-to-end validation"
+    required: true
+    checks:
+      - "All agents can start without errors"
+      - "Heartbeat loop responds for each agent"
+      - "Shared vault is accessible by all department members"
+      - "At least one workflow can be triggered"
+
+post_bootstrap:
+  message: |
+    Bootstrap complete. Your organization is ready.
+
+    Quick start:
+    - Talk to JARVIS to delegate tasks across departments
+    - Create tasks with: clawvault task add "Task name" --project content
+    - Monitor activity in Mission Control dashboard
+    - Check agent status: openclaw agents list
+
+  next_steps:
+    - "Start Mission Control dashboard: cd dashboard && npm run dev"
+    - "Verify agents: openclaw agents list"
+    - "Test a workflow: create a task tagged 'content'"

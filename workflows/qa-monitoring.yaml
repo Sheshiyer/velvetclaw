@@ -1,0 +1,68 @@
+# QA & Monitoring Workflow
+# Continuous quality assurance and system health monitoring.
+# SENTINEL monitors, CLAWD fixes, JARVIS is notified of critical issues.
+
+name: qa-monitoring
+version: "1.0.0"
+description: "Automated quality assurance, uptime monitoring, and code review pipeline"
+
+triggers:
+  - type: scheduled
+    cron: "*/5 * * * *"
+    action: "Health check cycle"
+  - type: event
+    source: github
+    filter:
+      type: pull_request
+      action: [opened, synchronize]
+  - type: task_created
+    filter:
+      tags: ["qa", "review", "monitoring", "bug"]
+      status: open
+
+steps:
+  health_check:
+    agent: sentinel
+    action: "Run health checks on all monitored services. Check uptime, response times, error rates, and SSL certificates. Report any anomalies."
+    output: "health-report.md"
+    timeout: "5m"
+    on_failure: escalate_immediately
+
+  code_review:
+    agent: sentinel
+    action: "Review the pull request for code quality, security issues, test coverage, and adherence to project standards. Post review comments on GitHub."
+    trigger_filter: "github.pull_request"
+    output: "review-comments.md"
+    timeout: "15m"
+    on_failure: escalate
+
+  bug_triage:
+    agent: sentinel
+    action: "Analyze the reported bug. Reproduce if possible, identify root cause, assess severity, and assign to CLAWD with reproduction steps."
+    trigger_filter: "task.tags contains 'bug'"
+    output: "bug-analysis.md"
+    timeout: "20m"
+
+  fix_implementation:
+    agent: clawd
+    action: "Implement the fix based on SENTINEL's analysis. Write tests, create PR, ensure CI passes."
+    depends_on: [bug_triage]
+    condition: "bug_analysis.severity in ['critical', 'high']"
+    output: "fix-pr.md"
+    timeout: "60m"
+    on_failure: escalate
+
+  fix_verification:
+    agent: sentinel
+    action: "Verify the fix resolves the original issue. Run regression tests. Approve PR if passing."
+    depends_on: [fix_implementation]
+    output: "verification-report.md"
+    timeout: "15m"
+
+escalation:
+  on_blocked: clawd
+  on_timeout: jarvis
+  escalate_immediately:
+    condition: "health_check.critical_failures > 0"
+    notify: [jarvis, owner]
+  max_retries: 3

@@ -1,0 +1,36 @@
+{
+  "name": "velvetclaw-mission-control",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mission Control dashboard for VelvetClaw multi-agent organization",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "convex:dev": "npx convex dev",
+    "convex:deploy": "npx convex deploy"
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "convex": "^1.17.0",
+    "convex-helpers": "^0.1.0",
+    "@radix-ui/react-tabs": "^1.1.0",
+    "@radix-ui/react-dialog": "^1.1.0",
+    "@radix-ui/react-dropdown-menu": "^2.1.0",
+    "lucide-react": "^0.400.0",
+    "date-fns": "^3.6.0",
+    "tailwindcss": "^3.4.0",
+    "clsx": "^2.1.0",
+    "tailwind-merge": "^2.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.5.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0"
+  }
+}

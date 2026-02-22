@@ -1,0 +1,58 @@
+# Development Department Coordination
+name: Development
+lead: clawd
+members: [sentinel]
+
+coordination:
+  shared_vault: true
+  vault_path: "shared/development/"
+
+  roles:
+    clawd:
+      focus: "Full-stack development, architecture decisions, code implementation"
+      authority: "Merge PRs, approve architecture changes, assign dev tasks"
+    sentinel:
+      focus: "QA, uptime monitoring, code review, bug triage"
+      authority: "Block merges on quality issues, create bug reports, approve fixes"
+
+  communication:
+    internal: "Shared vault — SENTINEL creates review/bug reports, CLAWD reads and acts"
+    external: "CLAWD reports to JARVIS on development progress and blockers"
+
+  workflow:
+    pr_flow:
+      1: "CLAWD creates PR"
+      2: "SENTINEL reviews code"
+      3: "SENTINEL approves or requests changes"
+      4: "CLAWD addresses feedback"
+      5: "SENTINEL re-reviews and approves"
+      6: "CLAWD merges"
+    bug_flow:
+      1: "SENTINEL detects or triages bug"
+      2: "SENTINEL creates bug report with reproduction steps"
+      3: "CLAWD implements fix"
+      4: "SENTINEL verifies fix"
+
+  escalation:
+    chain: [clawd, jarvis, owner]
+    triggers:
+      - "Service downtime exceeding 5 minutes"
+      - "Security vulnerability discovered"
+      - "Breaking change affecting other departments"
+      - "Architecture decision with long-term implications"
+
+  task_routing:
+    incoming_tags: [code, development, bug, fix, feature, pr, deploy, infrastructure]
+    default_assignee: clawd
+    auto_delegate:
+      - tags: [qa, review, monitoring, uptime, health] -> sentinel
+      - tags: [code, feature, fix, deploy] -> clawd
+
+  quality:
+    review_required: true
+    reviewer: sentinel
+    standards:
+      - "All PRs must have tests"
+      - "CI must pass before merge"
+      - "No secrets in code"
+      - "Breaking changes documented"

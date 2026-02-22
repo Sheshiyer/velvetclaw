@@ -1,0 +1,47 @@
+# Product Department Coordination
+name: Product
+lead: clip
+members: []
+
+coordination:
+  shared_vault: true
+  vault_path: "shared/product/"
+
+  roles:
+    clip:
+      focus: "Video clipping, caption generation, platform-optimized content"
+      authority: "Clip selection, caption style, platform format decisions"
+
+  communication:
+    internal: "Solo department — CLIP manages product content pipeline independently"
+    external: "Reports to JARVIS on content output metrics"
+
+  cross_department:
+    - department: design
+      agent: nova
+      interaction: "Receive source videos for clipping"
+    - department: design
+      agent: vibe
+      interaction: "Request motion overlays for clips"
+    - department: content
+      agent: scribe
+      interaction: "Request caption copy for clips"
+
+  escalation:
+    chain: [clip, jarvis, owner]
+    triggers:
+      - "Copyright/licensing concern with source material"
+      - "Platform policy conflict"
+      - "Content moderation flag"
+
+  task_routing:
+    incoming_tags: [clip, clipping, caption, product, shorts, reels, tiktok]
+    default_assignee: clip
+
+  quality:
+    review_required: false
+    standards:
+      - "Every clip has captions"
+      - "Hook within first 3 seconds"
+      - "Platform-optimized format and aspect ratio"
+      - "No copyrighted music without license"

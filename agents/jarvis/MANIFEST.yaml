@@ -1,0 +1,51 @@
+agent:
+  id: "jarvis"
+  name: "JARVIS"
+  tier: 1
+  role: "Chief Strategy Officer"
+  department: null
+  reports_to: owner
+
+models:
+  primary: "openai/gpt-5.3-codex"
+  fallback: "google-gemini-cli/gemini-2.5-flash"
+  thinking: "high"
+
+skills:
+  clawhub:
+    - orchestrator-enforcer
+    - model-usage
+    - things-mac
+  custom: []
+
+triggers:
+  - event: "task_created"
+    filter: { priority: "critical" }
+    action: "triage_and_delegate"
+  - event: "heartbeat"
+    interval: "5m"
+    action: "check_all_departments"
+  - event: "escalation"
+    action: "review_and_decide"
+
+channels:
+  listen: [telegram, discord]
+  notify: [telegram]
+
+memory:
+  seed_files:
+    - memory/brand-voice.md
+    - memory/tech-stack.md
+    - memory/processes.md
+  private: false
+
+delegation:
+  rules:
+    - tag: "research" -> department: research
+    - tag: "content" -> department: content
+    - tag: "code" -> department: development
+    - tag: "design" -> department: design
+    - tag: "video" -> department: design
+    - tag: "user" -> department: user-success
+    - tag: "clip" -> department: product
+  default: "assess_and_route"

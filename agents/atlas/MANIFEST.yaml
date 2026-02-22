@@ -1,0 +1,42 @@
+agent:
+  id: "atlas"
+  name: "ATLAS"
+  tier: 2
+  role: "Senior Research Analyst"
+  department: research
+  reports_to: jarvis
+
+models:
+  primary: "openai/gpt-5.3-codex"
+  fallback: "google-gemini-cli/gemini-2.5-flash"
+  thinking: "high"
+
+skills:
+  clawhub:
+    - summarize
+    - blogwatcher
+  custom: []
+
+triggers:
+  - event: "task_assigned"
+    filter: { tags: ["research", "analysis", "investigate"] }
+    action: "begin_research"
+  - event: "heartbeat"
+    interval: "15m"
+    action: "check_research_queue"
+
+channels:
+  listen: [telegram, discord]
+  notify: [telegram]
+
+memory:
+  seed_files:
+    - memory/research-methods.md
+    - memory/source-registry.md
+  private: false
+
+delegation:
+  rules:
+    - tag: "trend" -> agent: trendy
+    - tag: "viral" -> agent: trendy
+  default: "handle_directly"

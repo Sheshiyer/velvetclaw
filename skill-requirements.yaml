@@ -1,0 +1,54 @@
+# Skill Requirements
+# ClawHub skills to auto-install during bootstrap.
+# Global skills are installed for ALL agents.
+# Per-agent skills are installed only for the specified agent.
+
+version: "1.0.0"
+
+global:
+  - clawhub
+  - github
+  - obsidian
+  - apple-notes
+  - apple-reminders
+
+per_agent:
+  jarvis:
+    - orchestrator-enforcer
+    - model-usage
+    - things-mac
+  atlas:
+    - summarize
+    - blogwatcher
+  trendy:
+    - summarize
+  scribe:
+    - coding-agent
+  clawd:
+    - coding-agent
+    - prepare-pr
+    - review-pr
+    - merge-pr
+    - gh-issues
+  sentinel:
+    - healthcheck
+    - review-pr
+  pixel:
+    - openai-image-gen
+  nova:
+    - video-frames
+    - ai-video-director
+    - youtube-transcript
+  vibe:
+    - gifgrep
+  sage:
+    - discord
+  clip:
+    - video-frames
+    - youtube-transcript
+
+plugins:
+  optional:
+    - name: camofox-browser
+      description: "Anti-detection browsing for agents on remote servers"
+      install: "openclaw plugins install @askjo/camofox-browser"

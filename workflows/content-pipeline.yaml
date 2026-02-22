@@ -1,0 +1,62 @@
+# Content Pipeline Workflow
+# Triggered when a content task is created.
+# Routes through research -> writing -> visuals -> review.
+
+name: content-pipeline
+version: "1.0.0"
+description: "End-to-end content creation from idea to published piece"
+
+triggers:
+  - type: task_created
+    filter:
+      department: content
+      status: open
+  - type: task_created
+    filter:
+      tags: ["content", "article", "blog", "post"]
+      status: open
+
+steps:
+  research:
+    agent: atlas
+    action: "Research the topic from the task description. Produce a structured research brief with key facts, sources, angles, and audience insights."
+    output: "research-brief.md"
+    timeout: "30m"
+    on_failure: escalate
+
+  writing:
+    agent: scribe
+    action: "Write the content piece using the research brief. Match brand voice. Include headline options, body copy, and CTA."
+    depends_on: [research]
+    output: "draft.md"
+    timeout: "45m"
+    on_failure: escalate
+
+  visuals:
+    agent: pixel
+    action: "Generate visual assets for the content. Create hero image, social thumbnails, and inline graphics as needed."
+    depends_on: [writing]
+    output: "visuals/"
+    timeout: "30m"
+    on_failure: continue
+
+  review:
+    agent: sentinel
+    action: "Review the content for quality, accuracy, broken links, and brand consistency. Produce a review report with pass/fail and specific feedback."
+    depends_on: [writing, visuals]
+    output: "review.md"
+    timeout: "15m"
+    on_failure: escalate
+
+  revision:
+    agent: scribe
+    action: "Address feedback from review. Update draft and visuals if needed."
+    depends_on: [review]
+    condition: "review.status == 'needs_revision'"
+    output: "final.md"
+    timeout: "20m"
+
+escalation:
+  on_blocked: jarvis
+  on_timeout: jarvis
+  max_retries: 2

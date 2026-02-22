@@ -1,0 +1,102 @@
+# VelvetClaw Organization Manifest
+# This file defines the complete agent organization structure.
+# Used by the org-bootstrap skill to self-assemble the deployment.
+
+version: "1.0.0"
+schema: "org-manifest/v1"
+
+org:
+  name: "VelvetClaw"
+  description: "Multi-agent autonomous organization for content, research, development, and design"
+
+  hierarchy:
+    chief:
+      agent: jarvis
+      role: "Chief Strategy Officer"
+      capabilities:
+        - strategic-planning
+        - task-orchestration
+      delegates_to:
+        - research
+        - content
+        - development
+        - design
+        - user-success
+        - product
+
+    departments:
+      research:
+        name: "Research"
+        icon: "magnifying-glass"
+        lead: atlas
+        members:
+          - trendy
+        shared_vault: true
+        description: "Deep research, web intelligence, and trend analysis"
+
+      content:
+        name: "Content"
+        icon: "pencil"
+        lead: scribe
+        members: []
+        shared_vault: true
+        description: "Content creation, voice analysis, and editorial direction"
+
+      development:
+        name: "Development"
+        icon: "terminal"
+        lead: clawd
+        members:
+          - sentinel
+        shared_vault: true
+        description: "Full-stack development, code review, and quality assurance"
+
+      design:
+        name: "Design"
+        icon: "palette"
+        lead: pixel
+        members:
+          - nova
+          - vibe
+        shared_vault: true
+        description: "Visual design, video production, and motion graphics"
+
+      user-success:
+        name: "User Success"
+        icon: "rocket"
+        lead: sage
+        members: []
+        shared_vault: true
+        description: "User segmentation, personalized communication, and engagement"
+
+      product:
+        name: "Product"
+        icon: "trident"
+        lead: clip
+        members: []
+        shared_vault: true
+        description: "Video clipping, caption generation, and product content"
+
+  coordination:
+    method: "shared-vault"
+    heartbeat: "5m"
+    escalation_chain:
+      - department-lead
+      - jarvis
+      - owner
+    task_routing:
+      default: jarvis
+      by_tag:
+        research: research
+        content: content
+        code: development
+        design: design
+        video: design
+        user: user-success
+        clip: product
+
+  models:
+    default:
+      primary: "openai/gpt-5.3-codex"
+      fallback: "google-gemini-cli/gemini-2.5-flash"
+      thinking: "high"

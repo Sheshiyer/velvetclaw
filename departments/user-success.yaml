@@ -1,0 +1,48 @@
+# User Success Department Coordination
+name: User Success
+lead: sage
+members: []
+
+coordination:
+  shared_vault: true
+  vault_path: "shared/user-success/"
+
+  roles:
+    sage:
+      focus: "User segmentation, personalized emails, engagement optimization"
+      authority: "User communication strategy, segmentation rules, engagement campaigns"
+
+  communication:
+    internal: "Solo department — SAGE manages user engagement independently"
+    external: "Reports to JARVIS on user metrics and engagement health"
+
+  cross_department:
+    - department: content
+      agent: scribe
+      interaction: "Request personalized content for user segments"
+    - department: research
+      agent: atlas
+      interaction: "Request user behavior research and insights"
+    - department: design
+      agent: pixel
+      interaction: "Request visual assets for email campaigns"
+
+  escalation:
+    chain: [sage, jarvis, owner]
+    triggers:
+      - "User churn rate exceeds threshold"
+      - "Negative user sentiment detected"
+      - "User reports critical issue requiring human intervention"
+      - "Mass communication to be sent (requires owner approval)"
+
+  task_routing:
+    incoming_tags: [user, engagement, email, onboarding, churn, feedback, support, community]
+    default_assignee: sage
+
+  quality:
+    review_required: false
+    standards:
+      - "All user communications are personalized to segment"
+      - "Privacy respected — no PII in shared vaults"
+      - "Engagement metrics tracked for every campaign"
+      - "Unsubscribe/opt-out always honored"

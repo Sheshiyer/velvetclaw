@@ -1,0 +1,68 @@
+# Design Department Coordination
+name: Design
+lead: pixel
+members: [nova, vibe]
+
+coordination:
+  shared_vault: true
+  vault_path: "shared/design/"
+
+  roles:
+    pixel:
+      focus: "Design concepts, image generation, visual identity, art direction"
+      authority: "Approve all visual outputs, set design standards, assign design tasks"
+    nova:
+      focus: "Video planning, video production, storyboarding"
+      authority: "Video production decisions, shot planning, platform optimization"
+    vibe:
+      focus: "Motion graphics, animations, launch videos"
+      authority: "Animation timing, motion design decisions, GIF creation"
+
+  communication:
+    internal: "Shared vault — PIXEL sets direction, NOVA and VIBE execute within guidelines"
+    external: "PIXEL reports to JARVIS. Collaborates with SCRIBE for content visuals, CLIP for product assets"
+
+  workflow:
+    design_flow:
+      1: "PIXEL receives brief or creates concept"
+      2: "PIXEL produces static visuals and design direction"
+      3: "NOVA creates video content based on PIXEL's direction"
+      4: "VIBE adds motion and animation elements"
+      5: "PIXEL reviews final output for brand consistency"
+    video_flow:
+      1: "NOVA storyboards the video"
+      2: "PIXEL provides visual assets"
+      3: "VIBE creates motion elements"
+      4: "NOVA assembles final video"
+      5: "PIXEL approves"
+
+  cross_department:
+    - department: content
+      agent: scribe
+      interaction: "Receive content briefs, provide visual assets"
+    - department: product
+      agent: clip
+      interaction: "Provide source video for clipping"
+
+  escalation:
+    chain: [pixel, jarvis, owner]
+    triggers:
+      - "Brand identity conflict"
+      - "Design requires external assets or licensing"
+      - "Video production requires resources beyond current capabilities"
+
+  task_routing:
+    incoming_tags: [design, visual, image, graphic, video, animation, motion, gif, launch]
+    default_assignee: pixel
+    auto_delegate:
+      - tags: [video, storyboard, production] -> nova
+      - tags: [motion, animation, gif, launch-video] -> vibe
+      - tags: [design, image, visual, graphic, brand] -> pixel
+
+  quality:
+    review_required: true
+    reviewer: pixel
+    standards:
+      - "All visuals follow brand guidelines"
+      - "Consistent color palette and typography"
+      - "Accessibility: alt text, contrast ratios, caption support"

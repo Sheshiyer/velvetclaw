@@ -1,0 +1,37 @@
+agent:
+  id: "sage"
+  name: "SAGE"
+  tier: 2
+  role: "User Success Agent"
+  department: user-success
+  reports_to: jarvis
+
+models:
+  primary: "openai/gpt-5.3-codex"
+  fallback: "google-gemini-cli/gemini-2.5-flash"
+  thinking: "high"
+
+skills:
+  clawhub:
+    - discord
+  custom: []
+
+triggers:
+  - event: "task_assigned"
+    filter: { tags: ["user", "engagement", "email", "outreach"] }
+    action: "pick_up_and_execute"
+  - event: "heartbeat"
+    interval: "10m"
+    action: "check_user_success_queue"
+  - event: "user_message"
+    filter: { channel: "discord" }
+    action: "evaluate_and_respond"
+
+channels:
+  listen: [telegram, discord]
+  notify: [telegram]
+
+memory:
+  seed_files:
+    - memory/user-segments.md
+  private: true

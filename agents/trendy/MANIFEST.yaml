@@ -1,0 +1,39 @@
+agent:
+  id: "trendy"
+  name: "TRENDY"
+  tier: 2
+  role: "Viral Scout"
+  department: research
+  reports_to: atlas
+
+models:
+  primary: "openai/gpt-5.3-codex"
+  fallback: "google-gemini-cli/gemini-2.5-flash"
+  thinking: "medium"
+
+skills:
+  clawhub:
+    - summarize
+  custom: []
+
+triggers:
+  - event: "heartbeat"
+    interval: "30m"
+    action: "scan_trends"
+  - event: "task_assigned"
+    filter: { tags: ["trend", "viral", "social", "buzz"] }
+    action: "investigate_trend"
+
+channels:
+  listen: [telegram, discord]
+  notify: [telegram]
+
+memory:
+  seed_files:
+    - memory/trend-sources.md
+    - memory/signal-patterns.md
+  private: false
+
+delegation:
+  rules: []
+  default: "handle_directly"

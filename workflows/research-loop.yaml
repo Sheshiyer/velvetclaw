@@ -1,0 +1,52 @@
+# Research Loop Workflow
+# Continuous research and trend monitoring cycle.
+# ATLAS handles deep research, TRENDY scouts viral content.
+# Results are synthesized and reported to JARVIS.
+
+name: research-loop
+version: "1.0.0"
+description: "Ongoing research and trend intelligence gathering"
+
+triggers:
+  - type: task_created
+    filter:
+      department: research
+      status: open
+  - type: scheduled
+    cron: "0 */6 * * *"
+    action: "Run trend scan cycle"
+
+steps:
+  trend_scan:
+    agent: trendy
+    action: "Scan social platforms, news feeds, and trending topics. Identify emerging trends relevant to the organization. Produce a trend brief with virality scores."
+    output: "trend-brief.md"
+    timeout: "20m"
+    on_failure: continue
+
+  deep_research:
+    agent: atlas
+    action: "Take the highest-signal trends from the trend brief and perform deep research. Verify claims, find primary sources, assess longevity and relevance."
+    depends_on: [trend_scan]
+    output: "research-report.md"
+    timeout: "45m"
+    on_failure: escalate
+
+  synthesis:
+    agent: atlas
+    action: "Synthesize trend brief and deep research into an actionable intelligence summary. Highlight opportunities, risks, and recommended actions."
+    depends_on: [deep_research]
+    output: "intelligence-summary.md"
+    timeout: "15m"
+
+  report:
+    agent: jarvis
+    action: "Review intelligence summary. Create tasks for relevant departments based on findings. Update organizational memory with key insights."
+    depends_on: [synthesis]
+    output: "action-items.md"
+    timeout: "10m"
+
+escalation:
+  on_blocked: jarvis
+  on_timeout: jarvis
+  max_retries: 1

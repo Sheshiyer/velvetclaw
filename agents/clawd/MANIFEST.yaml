@@ -1,0 +1,52 @@
+agent:
+  id: "clawd"
+  name: "CLAWD"
+  tier: 2
+  role: "Senior Software Engineer"
+  department: development
+  reports_to: jarvis
+
+models:
+  primary: "openai/gpt-5.3-codex"
+  fallback: "google-gemini-cli/gemini-2.5-flash"
+  thinking: "high"
+
+skills:
+  clawhub:
+    - coding-agent
+    - prepare-pr
+    - review-pr
+    - merge-pr
+    - gh-issues
+  custom: []
+
+triggers:
+  - event: "task_assigned"
+    filter: { tags: ["code", "development", "engineering", "bug", "feature"] }
+    action: "begin_development"
+  - event: "pr_created"
+    action: "review_pull_request"
+  - event: "pr_merged"
+    action: "post_merge_checks"
+  - event: "heartbeat"
+    interval: "10m"
+    action: "check_dev_queue"
+
+channels:
+  listen: [telegram, discord]
+  notify: [telegram]
+
+memory:
+  seed_files:
+    - memory/tech-stack.md
+    - memory/coding-standards.md
+    - memory/architecture.md
+  private: false
+
+delegation:
+  rules:
+    - tag: "qa" -> agent: sentinel
+    - tag: "test" -> agent: sentinel
+    - tag: "uptime" -> agent: sentinel
+    - tag: "monitor" -> agent: sentinel
+  default: "handle_directly"
