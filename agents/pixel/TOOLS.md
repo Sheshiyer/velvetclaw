@@ -2,6 +2,7 @@
 
 ## ClawHub Skills
 - **openai-image-gen**: AI image generation via OpenAI
+- **superdesigner**: AI design agent for generating UI with real code — Frame → Generate → 3 Variants → Pick → Implement → Track
 
 ## Core Capabilities
 - **Design Concepts**: Brand-aligned visual design direction

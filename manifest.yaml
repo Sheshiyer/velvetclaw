@@ -116,7 +116,7 @@ org:
       error_becomes_context: true
     agent_files:
       stage_1: [MANIFEST.yaml, IDENTITY.md, SOUL.md, MEMORY.md]
-      stage_2: [TASKS.md, CONTEXT.md, TOOLS.md, USER.md, HEARTBEAT.md, AGENTS.md, EVOLVE.md]
+      stage_2: [TASKS.md, CONTEXT.md, TOOLS.md, USER.md, HEARTBEAT.md, AGENTS.md, EVOLVE.md, SELF.md]
 
   evolution:
     enabled: true

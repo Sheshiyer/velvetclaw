@@ -255,7 +255,8 @@ agents/{agent-name}/
 ├── USER.md            # Stage 2: Owner context and preferences
 ├── HEARTBEAT.md       # Stage 2: Loop cycle health and status log
 ├── AGENTS.md          # Stage 2: Hierarchy awareness — subordinates and peers
-└── EVOLVE.md          # Stage 2: Weekly self-evolution with 20 questions
+├── EVOLVE.md          # Stage 2: Weekly self-evolution with 20 questions
+└── SELF.md            # Stage 2.1: Wipe-recovery identity preservation document
 ```
 
 ### Stage 2 Templates
@@ -268,7 +269,8 @@ templates/
 ├── lesson.md           # Stage 1 (existing)
 ├── loop-config.md      # Stage 2: Loop cycle configuration primitive
 ├── pressure-prompts.md # Stage 2: 25 strategic audit questions
-└── evolve-cycle.md     # Stage 2: Weekly evolution cycle schema
+├── evolve-cycle.md     # Stage 2: Weekly evolution cycle schema
+└── self-recovery.md    # Stage 2.1: SELF.md agent recovery template
 ```
 
 ### Stage 2 Workflows
@@ -294,7 +296,7 @@ for agent_dir in agents/*/; do
   workspace="$HOME/.openclaw/workspace-$agent_id"
 
   # Copy Stage 2 files if they exist (do NOT overwrite Stage 1 files)
-  for stage2_file in TASKS.md CONTEXT.md TOOLS.md USER.md HEARTBEAT.md AGENTS.md EVOLVE.md; do
+  for stage2_file in TASKS.md CONTEXT.md TOOLS.md USER.md HEARTBEAT.md AGENTS.md EVOLVE.md SELF.md; do
     if [ -f "$agent_dir/$stage2_file" ]; then
       cp "$agent_dir/$stage2_file" "$workspace/"
     fi
