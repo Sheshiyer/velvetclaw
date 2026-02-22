@@ -1,0 +1,109 @@
+# Agent Loop Workflow
+# The core autonomous loop that makes agents resilient.
+# Instead of one long session, agents run short cron-triggered cycles.
+# Each cycle: read → pick step → work → write result → skip if blocked → next cycle.
+
+name: agent-loop
+version: "2.0.0"
+stage: 2
+description: "Autonomous agent loop — cron-triggered short cycles with error resilience, skip-on-block, and context persistence"
+
+triggers:
+  - type: scheduled
+    cron_by_tier:
+      tier_1: "*/5 * * * *"     # JARVIS: every 5 minutes (96 runs/8h)
+      tier_2_lead: "*/10 * * * *"  # Department leads: every 10 minutes (48 runs/8h)
+      tier_2_member: "*/15 * * * *" # Members: every 15 minutes (32 runs/8h)
+  - type: event
+    source: task_created
+    filter:
+      priority: critical
+    action: "immediate_cycle"
+
+# The Loop — each cycle follows this exact sequence
+cycle:
+  pre_read:
+    description: "Load state before doing any work"
+    files:
+      - INBOX.md        # Cross-agent assignments — check FIRST, convert to tasks
+      - TASKS.md        # Step-by-step work queue
+      - CONTEXT.md      # Stack, constraints, known pitfalls
+      - HEARTBEAT.md    # Own cycle history and health
+      - AGENTS.md       # Hierarchy awareness — who to escalate to, who to delegate to
+
+  inbox_processing:
+    description: "Convert inbox items to tasks before step selection"
+    rules:
+      - Read all entries under "## Pending" in INBOX.md
+      - For each entry, create a new step in TASKS.md with the entry's priority and tags
+      - Move the processed entry from "## Pending" to "## Processed" with timestamp
+      - If 10+ pending items, escalate to reports_to for triage before processing
+      - Critical inbox items override current step selection
+
+  step_selection:
+    description: "Pick the next incomplete step from TASKS.md"
+    rules:
+      - Pick first step with status "open" or "in-progress"
+      - If a step has status "blocked" and retry_count < retry_blocked_after, skip it
+      - If a step has status "blocked" and retry_count >= retry_blocked_after, retry it
+      - If no steps remain, report idle to HEARTBEAT.md and yield
+      - Priority order: critical > high > medium > low
+      - Respect depends_on: skip steps whose dependencies haven't completed
+
+  execute_step:
+    description: "Work on exactly ONE step"
+    timeout: "max_step_timeout from loop config"
+    rules:
+      - Work on only the selected step — no multi-step leaps
+      - Read CONTEXT.md rules before acting — honor constraints and past mistakes
+      - If the step requires delegating to a subordinate, create a task for them instead
+      - If hierarchy says this isn't your job, escalate upward
+
+  write_result:
+    description: "Write outcome back to files"
+    on_success:
+      - Update step status in TASKS.md to "done"
+      - Append to HEARTBEAT.md: timestamp, step ID, "completed", duration
+      - If step generated output, write to department shared vault
+    on_blocked:
+      - Update step status in TASKS.md to "blocked"
+      - Write blocked reason: "step N blocked: {specific reason}"
+      - Increment retry_count on the step
+      - Append to HEARTBEAT.md: timestamp, step ID, "blocked", reason
+      - Move to next available step — do NOT halt
+      - Log the blocker as context in CONTEXT.md for future cycles
+    on_failure:
+      - Update step status in TASKS.md to "failed"
+      - Write error details: "step N failed: {error message}"
+      - Append to HEARTBEAT.md: timestamp, step ID, "failed", error
+      - The error becomes context for the next run
+      - Move to next available step — do NOT halt
+      - If same step fails 3 times, escalate to reports_to agent
+
+  post_write:
+    description: "Cycle housekeeping"
+    actions:
+      - Update HEARTBEAT.md with cycle summary (steps attempted, completed, blocked, failed)
+      - If all steps done, notify reports_to agent via shared vault
+      - If critical blockers accumulated, trigger immediate escalation
+      - Yield — wait for next cron trigger
+
+# Escalation rules
+escalation:
+  blocked_threshold: 3          # Escalate after 3 consecutive blocked cycles
+  failure_threshold: 3           # Escalate after same step fails 3 times
+  idle_threshold: 5              # Alert if agent has nothing to do for 5 cycles
+  escalate_to: "reports_to"     # From MANIFEST.yaml — respects hierarchy
+  critical_escalate_to: jarvis  # Critical issues always reach JARVIS
+  owner_escalate_on:
+    - "all_steps_blocked"
+    - "critical_failure"
+    - "3_consecutive_failed_cycles"
+
+# Anti-fragility rules
+resilience:
+  never_halt_on_error: true      # The agent NEVER stops on error — it logs and continues
+  error_becomes_context: true    # Every failure is written to CONTEXT.md as a known pitfall
+  blocked_becomes_context: true  # Every blocker is written to CONTEXT.md for future reference
+  max_retries_per_step: 3       # After 3 retries, escalate and move on
+  cycle_timeout: "max_step_timeout + 2m"  # Hard timeout per cycle including I/O

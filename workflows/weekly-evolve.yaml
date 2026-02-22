@@ -1,0 +1,80 @@
+# Weekly Evolution Workflow
+# Every Sunday, each agent runs a self-evolution cycle.
+# Selects pressure prompts + generates interaction questions = 20 total.
+# Answers with evidence from cycle logs. Creates tasks from insights.
+
+name: weekly-evolve
+version: "2.0.0"
+stage: 2
+description: "Proactive weekly self-refinement — agents evolve themselves, not waiting to be told"
+
+triggers:
+  - type: scheduled
+    cron: "0 0 * * 0"    # Every Sunday at midnight
+    description: "Weekly evolution trigger"
+  - type: manual
+    description: "Owner can trigger evolution for any agent at any time"
+
+# Evolution cycle for each agent
+steps:
+  gather_cycle_data:
+    agent: "{self}"
+    action: "Read HEARTBEAT.md logs from the past 7 days. Compile cycle statistics: total cycles, steps completed, steps blocked, steps failed, average step duration, most common blockers."
+    output: "cycle-data section in EVOLVE.md"
+    timeout: "5m"
+
+  select_pressure_prompts:
+    agent: "{self}"
+    action: "Read templates/pressure-prompts.md. Select 5-8 prompts most relevant to this week's challenges, domain responsibilities, and patterns observed in cycle data."
+    depends_on: [gather_cycle_data]
+    output: "selected-prompts section in EVOLVE.md"
+    timeout: "5m"
+
+  generate_interaction_questions:
+    agent: "{self}"
+    action: "From this week's TASKS.md history, CONTEXT.md additions, and HEARTBEAT.md patterns, generate 12-15 questions specific to actual work performed. Focus on: recurring failures, efficiency gaps, capability mismatches, delegation patterns, and quality trends."
+    depends_on: [gather_cycle_data]
+    output: "interaction-questions section in EVOLVE.md"
+    timeout: "10m"
+
+  answer_all_questions:
+    agent: "{self}"
+    action: "Answer all 20 questions (pressure + interaction) with specific evidence from cycle logs. No generic answers — cite specific steps, blockers, outcomes, and patterns. Be honest about failures and blind spots."
+    depends_on: [select_pressure_prompts, generate_interaction_questions]
+    output: "answers section in EVOLVE.md"
+    timeout: "30m"
+
+  extract_insights:
+    agent: "{self}"
+    action: "From the 20 answers, identify the top 3 actionable insights. Each insight must be: specific (not vague), actionable (leads to a concrete change), and evidenced (supported by cycle data). Rate self-improvement 1-10 vs previous week."
+    depends_on: [answer_all_questions]
+    output: "insights section in EVOLVE.md"
+    timeout: "10m"
+
+  create_evolution_tasks:
+    agent: "{self}"
+    action: "Create concrete tasks in TASKS.md from the top 3 insights. Tag tasks with 'evolution' and 'week-{ISO_WEEK}'. These tasks enter the regular loop cycle starting Monday."
+    depends_on: [extract_insights]
+    output: "tasks in TASKS.md"
+    timeout: "5m"
+
+  report_to_lead:
+    agent: "{self}"
+    action: "Write a 3-bullet evolution summary to department shared vault. If agent IS the lead, write to JARVIS's attention. Include: evolution score, top insight, and key task created."
+    depends_on: [create_evolution_tasks]
+    output: "evolution-report in shared vault"
+    timeout: "5m"
+
+# Escalation
+escalation:
+  on_blocked: "skip and complete available steps"
+  on_timeout: "write partial results, flag for next week"
+  notify_on_completion: [jarvis]
+
+# Evolution history
+history:
+  retain_weeks: 12             # Keep 12 weeks of evolution history
+  compare_against: "previous"  # Compare scores week-over-week
+  trend_alert:
+    declining_3_weeks: "escalate to jarvis — agent may need reconfiguration"
+    improving_3_weeks: "log as success pattern to department shared vault"

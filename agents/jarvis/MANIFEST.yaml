@@ -49,3 +49,23 @@ delegation:
     - tag: "user" -> department: user-success
     - tag: "clip" -> department: product
   default: "assess_and_route"
+
+# Stage 2: Loop Infrastructure
+loop:
+  enabled: true
+  interval: "5m"
+  max_step_timeout: "4m"
+  on_blocked: log_and_skip
+  on_failure: log_skip_continue
+  retry_blocked_after: 3
+  reads: [TASKS.md, CONTEXT.md, HEARTBEAT.md, AGENTS.md]
+  writes: [TASKS.md, HEARTBEAT.md, CONTEXT.md]
+  escalation: owner
+  cycle_log: true
+
+evolve:
+  enabled: true
+  schedule: "0 0 * * 0"
+  pressure_prompt_count: 8
+  interaction_question_count: 12
+  total_questions: 20

@@ -232,3 +232,103 @@ This will:
 - **"Agent workspace already exists"**: The bootstrap will skip existing workspaces by default. Use "force bootstrap" to overwrite.
 - **"Skill not found on ClawHub"**: Check the skill name in `skill-requirements.yaml`. Use `clawhub search {name}` to find the correct slug.
 - **"Manifest validation failed"**: Check that all agent names in the hierarchy match directory names in `agents/`.
+
+---
+
+## Stage 2: Loop Infrastructure
+
+Stage 2 adds autonomous loop infrastructure to each agent. When bootstrapping a repo with Stage 2 files, the bootstrap process extends with these additional steps.
+
+### Stage 2 Agent Files
+
+Each agent directory may contain these additional files (all optional — Stage 2 features activate when present):
+
+```
+agents/{agent-name}/
+├── MANIFEST.yaml      # Stage 1 (existing)
+├── IDENTITY.md        # Stage 1 (existing)
+├── SOUL.md            # Stage 1 (existing)
+├── MEMORY.md          # Stage 1 (existing)
+├── TASKS.md           # Stage 2: Step-by-step work queue for loop cycles
+├── CONTEXT.md         # Stage 2: Stack, constraints, and known pitfalls
+├── TOOLS.md           # Stage 2: Available skills and capabilities
+├── USER.md            # Stage 2: Owner context and preferences
+├── HEARTBEAT.md       # Stage 2: Loop cycle health and status log
+├── AGENTS.md          # Stage 2: Hierarchy awareness — subordinates and peers
+└── EVOLVE.md          # Stage 2: Weekly self-evolution with 20 questions
+```
+
+### Stage 2 Templates
+
+```
+templates/
+├── task.md             # Stage 1 (existing)
+├── project.md          # Stage 1 (existing)
+├── decision.md         # Stage 1 (existing)
+├── lesson.md           # Stage 1 (existing)
+├── loop-config.md      # Stage 2: Loop cycle configuration primitive
+├── pressure-prompts.md # Stage 2: 25 strategic audit questions
+└── evolve-cycle.md     # Stage 2: Weekly evolution cycle schema
+```
+
+### Stage 2 Workflows
+
+```
+workflows/
+├── content-pipeline.yaml  # Stage 1 (existing)
+├── research-loop.yaml     # Stage 1 (existing)
+├── qa-monitoring.yaml     # Stage 1 (existing)
+├── agent-loop.yaml        # Stage 2: Autonomous cron-triggered loop cycle
+└── weekly-evolve.yaml     # Stage 2: Weekly self-evolution trigger
+```
+
+### Stage 2 Bootstrap Steps
+
+After Step 10 (Apply Department Rules), add:
+
+#### Step 10a: Copy Stage 2 Agent Files
+
+```bash
+for agent_dir in agents/*/; do
+  agent_id=$(basename "$agent_dir")
+  workspace="$HOME/.openclaw/workspace-$agent_id"
+
+  # Copy Stage 2 files if they exist (do NOT overwrite Stage 1 files)
+  for stage2_file in TASKS.md CONTEXT.md TOOLS.md USER.md HEARTBEAT.md AGENTS.md EVOLVE.md; do
+    if [ -f "$agent_dir/$stage2_file" ]; then
+      cp "$agent_dir/$stage2_file" "$workspace/"
+    fi
+  done
+done
+```
+
+#### Step 10b: Configure Loop Crons
+
+Read each agent's MANIFEST.yaml `loop:` section and configure the cron schedule:
+- Tier 1 agents (chiefs): every 5 minutes
+- Tier 2 leads: every 10 minutes
+- Tier 2 members: every 15 minutes
+
+Register the cron trigger in OpenClaw's scheduler for each agent.
+
+#### Step 10c: Register Weekly Evolution
+
+Set up the weekly evolution cron (Sunday midnight) for all agents:
+
+```bash
+# Register weekly-evolve workflow for each agent
+for workspace in ~/.openclaw/workspace-*/; do
+  agent_id=$(basename "$workspace" | sed 's/workspace-//')
+  openclaw schedule add --agent "$agent_id" --cron "0 0 * * 0" --workflow weekly-evolve
+done
+```
+
+### Stage 2 Validation
+
+Add these checks to Step 11:
+
+- Each agent workspace has TASKS.md, CONTEXT.md, HEARTBEAT.md (minimum viable loop)
+- Loop cron is registered and active for each agent
+- Weekly evolution cron is registered
+- Agent HEARTBEAT.md is writable
+- AGENTS.md hierarchy matches manifest.yaml hierarchy

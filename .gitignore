@@ -35,5 +35,9 @@ yarn-error.log*
 # Convex
 .convex/
 
+# Loop Runner
+logs/
+.loop-runner.pid
+
 # Claude Code
 .claude/
