@@ -76,6 +76,8 @@ log() {
 declare -A AGENT_TIERS
 declare -A AGENT_LAST_RUN
 declare -A AGENT_INTERVALS
+declare -A AGENT_PIDS
+declare -A AGENT_IDLE_COUNT
 
 discover_agents() {
   log "info" "Discovering agents from manifest..."
@@ -159,7 +161,6 @@ RUNNING_AGENTS=0
 
 invoke_agent() {
   local agent_id="$1"
-  local workspace="$HOME/.openclaw/workspace-$agent_id"
   local agent_dir="$REPO_ROOT/agents/$agent_id"
 
   if (( RUNNING_AGENTS >= MAX_CONCURRENT )); then
@@ -169,28 +170,121 @@ invoke_agent() {
 
   log "info" ">>> Triggering cycle for $agent_id (${AGENT_TIERS[$agent_id]})"
 
-  # ──────────────────────────────────────────────────────
-  # INVOKE AGENT HERE
-  # Replace this section with your OpenClaw CLI invocation.
-  # The agent should:
-  #   1. Read: INBOX.md, TASKS.md, CONTEXT.md, HEARTBEAT.md, AGENTS.md
-  #   2. Pick next incomplete step from TASKS.md
-  #   3. Execute one step
-  #   4. Write results back
-  #
-  # Example (customize for your OpenClaw installation):
-  #
-  #   openclaw run --agent "$agent_id" \
-  #     --workspace "$workspace" \
-  #     --workflow agent-loop \
-  #     --timeout "${AGENT_INTERVALS[$agent_id]}s" &
-  #
-  # For now, this logs the invocation point:
-  log "info" "    [PLACEHOLDER] Would invoke: openclaw run --agent $agent_id --workspace $workspace"
-  # ──────────────────────────────────────────────────────
+  # Build temp file paths with unique timestamps
+  local ts
+  ts=$(date +%s)
+  local prompt_file="/tmp/velvetclaw-prompt-${agent_id}-${ts}.txt"
+  local output_file="/tmp/velvetclaw-output-${agent_id}-${ts}.txt"
+  local error_file="/tmp/velvetclaw-error-${agent_id}-${ts}.txt"
 
+  # Lock check (mkdir-based since flock not reliable on macOS)
+  local lock_dir="/tmp/velvetclaw-lock-${agent_id}"
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    log "debug" "Skipping $agent_id — already running (lock exists)"
+    return
+  fi
+
+  # Assemble prompt
+  if ! "$SCRIPT_DIR/agent-prompt-assembler.sh" "$agent_id" > "$prompt_file" 2>>"$LOG_FILE"; then
+    log "error" "Failed to assemble prompt for $agent_id"
+    rmdir "$lock_dir" 2>/dev/null
+    rm -f "$prompt_file"
+    return
+  fi
+
+  # Get timeout from agent MANIFEST.yaml (default 240s = 4min)
+  local manifest="$REPO_ROOT/agents/$agent_id/MANIFEST.yaml"
+  local timeout_val=240
+  if [[ -f "$manifest" ]]; then
+    local timeout_str
+    timeout_str=$(grep -A10 "^loop:" "$manifest" | grep "max_step_timeout:" | head -1 | sed 's/.*: *"\{0,1\}\([^"]*\)"\{0,1\}/\1/' | xargs 2>/dev/null || echo "")
+    case "$timeout_str" in
+      *m) timeout_val=$(( ${timeout_str%m} * 60 )) ;;
+      *s) timeout_val=${timeout_str%s} ;;
+    esac
+  fi
+
+  # Mark last run time NOW (before async launch)
   AGENT_LAST_RUN["$agent_id"]=$(date +%s)
+
+  # Invoke claude -p with timeout in a background subshell
+  local start_time
+  start_time=$(date +%s)
+  RUNNING_AGENTS=$((RUNNING_AGENTS + 1))
+
+  (
+    # Disable errexit in the subshell so we can capture exit codes
+    set +e
+
+    # Run claude -p with the assembled prompt, with a hard timeout
+    timeout "$timeout_val" claude -p "$(cat "$prompt_file")" > "$output_file" 2>"$error_file"
+    local exit_code=$?
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+
+    # Re-enable errexit for the remaining operations
+    set -e
+
+    # Parse output
+    local parsed_file="/tmp/velvetclaw-parsed-${agent_id}-$(date +%s).json"
+    "$SCRIPT_DIR/agent-output-parser.sh" "$output_file" > "$parsed_file"
+
+    # Write back results to agent files
+    "$SCRIPT_DIR/write-back.sh" "$agent_id" "$parsed_file"
+
+    # Track tokens from stderr (claude CLI may report usage there)
+    local tokens=0
+    if [[ -f "$error_file" ]]; then
+      tokens=$(grep -o '"total_tokens":[0-9]*' "$error_file" 2>/dev/null | head -1 | cut -d: -f2 || true)
+      tokens=${tokens:-0}
+    fi
+
+    # Determine outcome from exit code
+    local outcome="completed"
+    if [[ $exit_code -eq 124 ]]; then
+      outcome="timeout"
+    elif [[ $exit_code -ne 0 ]]; then
+      outcome="failed"
+    fi
+
+    # Write heartbeat entry
+    "$SCRIPT_DIR/heartbeat-writer.sh" "$agent_id" "cycle-${ts}" "$outcome" "$duration" "$tokens"
+
+    # Cost tracking (optional companion script)
+    if [[ -f "$SCRIPT_DIR/cost-tracker.sh" ]]; then
+      "$SCRIPT_DIR/cost-tracker.sh" "$agent_id" "$error_file" 2>>"$REPO_ROOT/logs/loop-runner.log" || true
+    fi
+
+    # Clean up temp files
+    rm -f "$prompt_file" "$output_file" "$error_file" "$parsed_file"
+
+    # Release lock
+    rmdir "$lock_dir" 2>/dev/null
+  ) &
+
+  # Store background PID for tracking
+  local child_pid=$!
+  AGENT_PIDS["$agent_id"]=$child_pid
+  log "info" "  Agent $agent_id running as PID $child_pid (timeout: ${timeout_val}s)"
   log "info" "<<< Cycle triggered for $agent_id"
+}
+
+# ─── Reap Finished Background Agents ───
+
+reap_finished_agents() {
+  for agent_id in "${!AGENT_PIDS[@]}"; do
+    local pid=${AGENT_PIDS[$agent_id]}
+    if ! kill -0 "$pid" 2>/dev/null; then
+      wait "$pid" 2>/dev/null
+      unset "AGENT_PIDS[$agent_id]"
+      RUNNING_AGENTS=$((RUNNING_AGENTS - 1))
+      if (( RUNNING_AGENTS < 0 )); then
+        RUNNING_AGENTS=0
+      fi
+      log "debug" "Reaped finished agent $agent_id (was PID $pid)"
+    fi
+  done
 }
 
 # ─── Main Loop ───
@@ -206,6 +300,9 @@ run_loop() {
       sleep "$CHECK_INTERVAL"
       continue
     fi
+
+    # Reap any finished background agent processes
+    reap_finished_agents
 
     local now
     now=$(date +%s)

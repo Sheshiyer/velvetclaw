@@ -1,0 +1,61 @@
+{
+  "tasks": [
+    {
+      "id": "task-1771880502-144a",
+      "title": "Research competitor pricing strategy",
+      "assigned_agent": "atlas",
+      "department": "research",
+      "status": "pending",
+      "priority": "high",
+      "tags": [
+        "research"
+      ],
+      "created_at": "2026-02-23T21:01:42Z",
+      "updated_at": "2026-02-23T21:01:42Z",
+      "created_by": "dispatch",
+      "source": "manual",
+      "depends_on": null
+    },
+    {
+      "id": "task-1771880513-0d06",
+      "title": "Fix login page CSS bug",
+      "assigned_agent": "clawd",
+      "department": "development",
+      "status": "pending",
+      "priority": "medium",
+      "tags": [
+        "code"
+      ],
+      "created_at": "2026-02-23T21:01:53Z",
+      "updated_at": "2026-02-23T21:01:53Z",
+      "created_by": "dispatch",
+      "source": "manual",
+      "depends_on": null
+    },
+    {
+      "id": "task-1771880513-be56",
+      "title": "Create social banner",
+      "assigned_agent": "pixel",
+      "department": "design",
+      "status": "pending",
+      "priority": "critical",
+      "tags": [
+        "design"
+      ],
+      "created_at": "2026-02-23T21:01:53Z",
+      "updated_at": "2026-02-23T21:01:53Z",
+      "created_by": "dispatch",
+      "source": "manual",
+      "depends_on": null
+    }
+  ],
+  "metadata": {
+    "total": 3,
+    "pending": 3,
+    "in_progress": 0,
+    "completed": 0,
+    "blocked": 0,
+    "failed": 0,
+    "last_updated": "2026-02-23T21:01:53Z"
+  }
+}

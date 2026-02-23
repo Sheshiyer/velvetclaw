@@ -1,0 +1,392 @@
+{
+  "schema_version": "1.0",
+  "project": {
+    "name": "VelvetClaw MVP Local-Only Upgrade",
+    "repo_root": "/Volumes/madara/2026/velvetclaw",
+    "generated_on": "2026-02-24",
+    "generated_by": "task-master-planner",
+    "source_plan": "vault/plans/task-master-velvetclaw-integration.json",
+    "assumptions": [
+      "claude CLI is installed and accessible via PATH for agent invocation",
+      "ANTHROPIC_API_KEY is set in .env for claude -p calls",
+      "bats-core is installed for bash testing (brew install bats-core)",
+      "All 11 agents have valid MANIFEST.yaml with loop config",
+      "flock is available on macOS (or we use mkdir-based locks)",
+      "osascript is available for macOS notifications"
+    ],
+    "risks": [
+      "RAM constraints with concurrent claude -p processes (each ~200MB)",
+      "macOS sleep kills background processes (babysitter mitigates)",
+      "Agent output parsing fragility if claude response format varies",
+      "flock not natively available on macOS — need shlock or mkdir alternative"
+    ],
+    "total_tasks": 32,
+    "total_estimated_hours": 162,
+    "phases": 3,
+    "sprints": 3
+  },
+  "phases": [
+    {
+      "phase_id": "P0",
+      "name": "Core Agent Execution Engine",
+      "objective": "Fill the invoke_agent() PLACEHOLDER to make agents actually run via claude -p",
+      "sprints": [
+        {
+          "sprint_id": "S1",
+          "duration_weeks": 2,
+          "focus": "Agent invocation pipeline: assemble prompt → invoke → parse output → write back",
+          "tasks": [
+            {
+              "id": "P0-S1-01",
+              "title": "Create agent prompt assembler script",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": [],
+              "deliverable": "scripts/agent-prompt-assembler.sh that reads an agent's pre_read files (INBOX.md, TASKS.md, CONTEXT.md, HEARTBEAT.md, AGENTS.md, IDENTITY.md, SOUL.md, MANIFEST.yaml) and outputs a structured prompt for claude -p on stdout.",
+              "acceptance": "./scripts/agent-prompt-assembler.sh jarvis outputs a prompt containing JARVIS identity, current tasks, inbox items, and context constraints."
+            },
+            {
+              "id": "P0-S1-02",
+              "title": "Fill invoke_agent() PLACEHOLDER with claude -p invocation",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P0-S1-01", "P0-S1-03"],
+              "deliverable": "Updated invoke_agent() in scripts/loop-runner.sh that calls agent-prompt-assembler.sh, pipes to claude -p, captures stdout/stderr, and passes to output parser.",
+              "acceptance": "Running invoke_agent jarvis with ANTHROPIC_API_KEY set produces a claude response captured in a temp file."
+            },
+            {
+              "id": "P0-S1-03",
+              "title": "Create agent output parser",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": [],
+              "deliverable": "scripts/agent-output-parser.sh that takes claude -p raw output and extracts structured file update instructions (which files to update, with what content).",
+              "acceptance": "Given a mock claude response with TASKS.md and HEARTBEAT.md updates, parser outputs valid JSON with file paths and content blocks."
+            },
+            {
+              "id": "P0-S1-04",
+              "title": "Create write-back logic for post-cycle file updates",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P0-S1-03"],
+              "deliverable": "scripts/write-back.sh that reads parser output JSON and applies updates to agent state files (TASKS.md, HEARTBEAT.md, CONTEXT.md, INBOX.md).",
+              "acceptance": "Given parser JSON output, write-back modifies the target agent's files and the diff shows correct content changes."
+            },
+            {
+              "id": "P0-S1-05",
+              "title": "Add per-agent concurrency lock using mkdir-based locking",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-02"],
+              "deliverable": "Lock mechanism in loop-runner.sh using mkdir /tmp/velvetclaw-lock-{agent_id} that prevents overlapping cycles for the same agent.",
+              "acceptance": "Two concurrent invoke_agent calls for the same agent: second one skips with 'already running' log message."
+            },
+            {
+              "id": "P0-S1-06",
+              "title": "Add agent timeout handling with kill after max_step_timeout",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-02"],
+              "deliverable": "Timeout wrapper in invoke_agent() that kills claude -p process after max_step_timeout from MANIFEST.yaml (default 4min).",
+              "acceptance": "An agent cycle that exceeds timeout is killed, lock is released, and HEARTBEAT logs 'timeout' status."
+            },
+            {
+              "id": "P0-S1-07",
+              "title": "Create structured HEARTBEAT writer",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": [],
+              "deliverable": "scripts/heartbeat-writer.sh that appends structured entries to HEARTBEAT.md with timestamp, step_id, outcome (completed/blocked/failed/timeout), duration_seconds, tokens_used.",
+              "acceptance": "./scripts/heartbeat-writer.sh jarvis step-1 completed 45 1200 appends a correctly formatted entry to agents/jarvis/HEARTBEAT.md."
+            },
+            {
+              "id": "P0-S1-08",
+              "title": "Implement error capture writing failures to CONTEXT.md",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-04"],
+              "deliverable": "Error capture in write-back.sh that on blocked/failed outcomes appends the reason to the agent's CONTEXT.md under '## Known Pitfalls'.",
+              "acceptance": "After a blocked cycle, CONTEXT.md contains a new pitfall entry with the blocker reason and timestamp."
+            },
+            {
+              "id": "P0-S1-09",
+              "title": "Add model routing from MANIFEST.yaml primary/fallback",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-01"],
+              "deliverable": "Model selection in agent-prompt-assembler.sh that reads manifest.yaml models.default.primary and passes --model flag to claude -p, with fallback on failure.",
+              "acceptance": "Prompt assembler outputs the correct --model flag matching manifest.yaml config."
+            },
+            {
+              "id": "P0-S1-10",
+              "title": "Add ANTHROPIC_API_KEY and CLAUDE_MODEL to .env.example",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 2,
+              "dependencies": [],
+              "deliverable": "Updated .env.example with ANTHROPIC_API_KEY, CLAUDE_MODEL (default: claude-sonnet-4-20250514), MAX_RESPAWNS (default: 3), COST_ALERT_THRESHOLD (default: 10.00).",
+              "acceptance": ".env.example contains all four new variables with documentation comments."
+            },
+            {
+              "id": "P0-S1-11",
+              "title": "Add background process tracking with wait and PID reaping",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P0-S1-02"],
+              "deliverable": "PID tracking in loop-runner.sh that stores child PIDs in an associative array, reaps completed processes, updates RUNNING_AGENTS count accurately.",
+              "acceptance": "With MAX_CONCURRENT=2, starting 3 agents: first 2 run, third waits. When one finishes, third starts."
+            },
+            {
+              "id": "P0-S1-12",
+              "title": "Create agent cycle log in JSON lines format",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-07"],
+              "deliverable": "heartbeat-writer.sh also appends a JSON line to logs/cycles.jsonl with agent_id, timestamp, step_id, outcome, duration, tokens, model_used.",
+              "acceptance": "After a cycle, logs/cycles.jsonl has a valid JSON line that jq can parse."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "P1",
+      "name": "Task Routing & JARVIS Dispatch",
+      "objective": "Enable task creation, tag-based routing to correct agents, and JARVIS organizational awareness",
+      "sprints": [
+        {
+          "sprint_id": "S2",
+          "duration_weeks": 2,
+          "focus": "Task registry, dispatch CLI, JARVIS cycle enhancement, escalation, vault writes",
+          "tasks": [
+            {
+              "id": "P1-S2-01",
+              "title": "Create task registry JSON schema and init script",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": [],
+              "deliverable": "scripts/task-registry.sh with add/update/list/get subcommands operating on .velvetclaw/task-registry.json (schema: id, title, assigned_agent, department, status, priority, tags, created_at, updated_at).",
+              "acceptance": "./scripts/task-registry.sh add 'Research competitors' --tag research --priority high creates a valid entry and ./scripts/task-registry.sh list shows it."
+            },
+            {
+              "id": "P1-S2-02",
+              "title": "Create dispatch-task CLI for task creation and routing",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P1-S2-01"],
+              "deliverable": "scripts/dispatch-task.sh that creates a task in the registry, reads manifest.yaml task_routing.by_tag to find target agent, and writes to that agent's INBOX.md.",
+              "acceptance": "./scripts/dispatch-task.sh 'Analyze market trends' --tag research writes to agents/atlas/INBOX.md under ## Pending."
+            },
+            {
+              "id": "P1-S2-03",
+              "title": "Build JARVIS special cycle prompt with dept summaries and registry",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P0-S1-01", "P1-S2-01"],
+              "deliverable": "Enhanced agent-prompt-assembler.sh that when assembling JARVIS prompt, also includes: last HEARTBEAT entry from each department lead, task registry summary, pending escalations count.",
+              "acceptance": "JARVIS prompt contains department lead status summaries and the current task registry state."
+            },
+            {
+              "id": "P1-S2-04",
+              "title": "Implement inbox-to-tasks converter in write-back",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P0-S1-04"],
+              "deliverable": "Logic in write-back.sh that when processing agent output, converts INBOX.md Pending entries referenced in the output to TASKS.md steps and moves them to Processed.",
+              "acceptance": "After agent cycle that processes an inbox item, the item appears in TASKS.md and is moved to ## Processed in INBOX.md."
+            },
+            {
+              "id": "P1-S2-05",
+              "title": "Add escalation handler for 3x blocked steps",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-04", "P0-S1-08"],
+              "deliverable": "Escalation logic in write-back.sh that checks retry_count on blocked steps and when >= 3, writes to the agent's reports_to INBOX.md with escalation context.",
+              "acceptance": "A step blocked 3 times triggers an INBOX entry in the supervisor agent's INBOX.md with the blocker details."
+            },
+            {
+              "id": "P1-S2-06",
+              "title": "Create vault write helper with metadata header",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": [],
+              "deliverable": "scripts/vault-write.sh that writes a deliverable file to vault/{department}/ with a YAML frontmatter header (author, date, source_task, department, tags).",
+              "acceptance": "./scripts/vault-write.sh research 'market-analysis.md' --author atlas --task P1-S2-01 creates vault/research/market-analysis.md with valid frontmatter."
+            },
+            {
+              "id": "P1-S2-07",
+              "title": "Implement cross-department handoff routing via vault/handoffs",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": ["P1-S2-06"],
+              "deliverable": "Enhanced vault-write.sh --handoff flag that writes to vault/handoffs/ and adds routing metadata (from_dept, to_dept, requires_action_by).",
+              "acceptance": "./scripts/vault-write.sh --handoff research content 'brief.md' creates vault/handoffs/brief.md with cross-department routing metadata."
+            },
+            {
+              "id": "P1-S2-08",
+              "title": "Add idle detection after 5 empty cycles",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-02", "P0-S1-07"],
+              "deliverable": "Idle tracking in loop-runner.sh that counts consecutive cycles where agent has no open tasks, and after 5 cycles writes an idle notification to JARVIS INBOX.",
+              "acceptance": "After 5 idle cycles, agents/jarvis/INBOX.md has an idle notification entry for the idle agent."
+            },
+            {
+              "id": "P1-S2-09",
+              "title": "Create agent status summary script",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-07"],
+              "deliverable": "scripts/agent-status.sh that reads all 11 agents' HEARTBEAT.md last entry and outputs a formatted status table (agent, tier, last_cycle, outcome, tasks_remaining).",
+              "acceptance": "./scripts/agent-status.sh outputs a table with all 11 agents showing their last cycle status."
+            },
+            {
+              "id": "P1-S2-10",
+              "title": "Wire tag-based routing from manifest.yaml into dispatch",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": ["P1-S2-02"],
+              "deliverable": "dispatch-task.sh reads manifest.yaml coordination.task_routing.by_tag to resolve department from tag, then finds department lead from hierarchy to target the INBOX write.",
+              "acceptance": "./scripts/dispatch-task.sh 'Fix login bug' --tag code routes to clawd's INBOX (development department lead)."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "P2",
+      "name": "Memory, Monitoring & Tests",
+      "objective": "Make the system observable, recoverable, and tested with bats",
+      "sprints": [
+        {
+          "sprint_id": "S3",
+          "duration_weeks": 2,
+          "focus": "Archival, cost tracking, babysitter, notifications, health checks, test suite",
+          "tasks": [
+            {
+              "id": "P2-S3-01",
+              "title": "Create memory archive script for monthly HEARTBEAT rotation",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-07"],
+              "deliverable": "scripts/memory-archive.sh that rotates each agent's HEARTBEAT.md entries older than 30 days to logs/archive/{agent}/{YYYY-MM}-heartbeat.md, keeping only the last 50 entries in the live file.",
+              "acceptance": "Running on an agent with 100+ HEARTBEAT entries: live file has 50 entries, archive file has the rest."
+            },
+            {
+              "id": "P2-S3-02",
+              "title": "Implement context accumulation for blocked/failed outcomes",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-04"],
+              "deliverable": "Enhanced write-back.sh that on blocked/failed outcomes, appends a structured entry to CONTEXT.md under '## Known Pitfalls' with date, step reference, and learned constraint.",
+              "acceptance": "After a blocked cycle, the agent's CONTEXT.md has a new entry under Known Pitfalls with the specific blocker."
+            },
+            {
+              "id": "P2-S3-03",
+              "title": "Add token cost tracker parsing claude stderr",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P0-S1-02"],
+              "deliverable": "scripts/cost-tracker.sh that parses claude -p stderr for token usage (input_tokens, output_tokens), calculates cost, and appends to logs/cost-{agent}.csv (date, agent, model, input_tokens, output_tokens, cost_usd).",
+              "acceptance": "After an agent cycle, logs/cost-jarvis.csv has a new row with non-zero token counts."
+            },
+            {
+              "id": "P2-S3-04",
+              "title": "Create babysitter script for loop-runner auto-restart",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 6,
+              "dependencies": [],
+              "deliverable": "scripts/babysitter.sh with start/stop/status subcommands. Monitors loop-runner PID, restarts if crashed, tracks respawn count (max from MAX_RESPAWNS env, default 3), logs each respawn.",
+              "acceptance": "Kill loop-runner process → babysitter detects within 60s and restarts. After 3 restarts, babysitter stops and sends notification."
+            },
+            {
+              "id": "P2-S3-05",
+              "title": "Add macOS notification via osascript for critical events",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 4,
+              "dependencies": [],
+              "deliverable": "scripts/notify.sh that sends macOS Notification Center alerts via osascript for: critical escalations, agent failures, cost budget exceeded, babysitter respawn.",
+              "acceptance": "./scripts/notify.sh 'Agent jarvis failed' 'critical' shows a macOS notification with the message."
+            },
+            {
+              "id": "P2-S3-06",
+              "title": "Create health-check script for all agent state files",
+              "area": "qa",
+              "owner_role": "QA",
+              "est_hours": 4,
+              "dependencies": [],
+              "deliverable": "scripts/health-check.sh that validates all 11 agents have: MANIFEST.yaml (valid YAML), TASKS.md, HEARTBEAT.md, INBOX.md (valid markdown), and reports any missing or malformed files.",
+              "acceptance": "./scripts/health-check.sh exits 0 when all agents are healthy, exits 1 with details when any file is missing or invalid."
+            },
+            {
+              "id": "P2-S3-07",
+              "title": "Write bats tests for loop-runner operations",
+              "area": "qa",
+              "owner_role": "QA",
+              "est_hours": 8,
+              "dependencies": ["P0-S1-02"],
+              "deliverable": "tests/loop-runner.bats with tests for: config loading, agent discovery from manifest, tier interval mapping, working hours check, concurrent agent limiting, PID file management.",
+              "acceptance": "bats tests/loop-runner.bats passes all tests."
+            },
+            {
+              "id": "P2-S3-08",
+              "title": "Write bats tests for prompt assembler and write-back",
+              "area": "qa",
+              "owner_role": "QA",
+              "est_hours": 8,
+              "dependencies": ["P0-S1-01", "P0-S1-04"],
+              "deliverable": "tests/prompt-assembler.bats and tests/write-back.bats with tests for: prompt construction with mock agent files, file update application, error capture, inbox processing.",
+              "acceptance": "bats tests/prompt-assembler.bats tests/write-back.bats passes all tests."
+            },
+            {
+              "id": "P2-S3-09",
+              "title": "Write integration test for dispatch-route-execute cycle",
+              "area": "qa",
+              "owner_role": "QA",
+              "est_hours": 8,
+              "dependencies": ["P1-S2-02", "P0-S1-02"],
+              "deliverable": "tests/integration-dispatch.bats that tests the full flow: dispatch-task creates registry entry and INBOX item, simulates agent cycle (mock claude response), verifies write-back updates TASKS.md and HEARTBEAT.md.",
+              "acceptance": "bats tests/integration-dispatch.bats passes with mock data through the full pipeline."
+            },
+            {
+              "id": "P2-S3-10",
+              "title": "Update README with local swarm usage instructions",
+              "area": "product",
+              "owner_role": "Product",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-02", "P1-S2-02", "P2-S3-04"],
+              "deliverable": "Updated README.md with: Quick Start (setup .env, run health-check, start loop-runner), Usage (dispatch tasks, monitor status, view costs), Troubleshooting (common issues).",
+              "acceptance": "README contains working Quick Start instructions that a new user can follow to start the agent swarm."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -271,6 +271,148 @@ The `org-bootstrap` skill works with **any** repo following this manifest struct
 > **Overall: 67%** — Solid foundation, needs CI and tests
 <!-- readme-gen:end:health -->
 
+---
+
+## Quick Start: Running the Agent Swarm
+
+### Prerequisites
+
+- macOS with Bash 4+ (`brew install bash` if needed)
+- `claude` CLI installed and in PATH
+- `jq` installed (`brew install jq`)
+- `bats-core` for tests (`brew install bats-core`)
+
+### Setup
+
+1. **Configure environment:**
+   ```bash
+   cp .env.example .env
+   # Edit .env — at minimum set ANTHROPIC_API_KEY
+   ```
+
+2. **Validate agent health:**
+   ```bash
+   ./scripts/health-check.sh
+   # Should show 11/11 healthy
+   ```
+
+3. **Start the agent swarm:**
+   ```bash
+   # Start the babysitter (which manages the loop runner)
+   ./scripts/babysitter.sh start
+
+   # Or run loop-runner directly (foreground, for debugging)
+   ./scripts/loop-runner.sh run
+   ```
+
+4. **Dispatch work:**
+   ```bash
+   # Create and route a task
+   ./scripts/dispatch-task.sh "Research competitor pricing" --tag research --priority high
+   ./scripts/dispatch-task.sh "Fix login page CSS" --tag code
+   ./scripts/dispatch-task.sh "Create social media banner" --tag design
+   ```
+
+5. **Monitor:**
+   ```bash
+   # Agent status overview
+   ./scripts/agent-status.sh
+
+   # Cost tracking
+   ./scripts/cost-tracker.sh report
+
+   # View logs
+   tail -f logs/loop-runner.log
+   tail -f logs/cycles.jsonl | jq .
+   ```
+
+### Architecture
+
+```
++---------------------------------------------+
+|              babysitter.sh                   |
+|         (monitors + auto-restarts)           |
++----------------------+-----------------------+
+                       |
++----------------------v-----------------------+
+|             loop-runner.sh                   |
+|    (scheduler -- triggers agents on cron)    |
++----------------------+-----------------------+
+                       | for each agent on schedule
++----------------------v-----------------------+
+|         agent-prompt-assembler.sh            |
+|  (reads IDENTITY + TASKS + INBOX + CONTEXT)  |
++----------------------+-----------------------+
+                       | prompt
++----------------------v-----------------------+
+|              claude -p                       |
+|      (executes one cycle step)               |
++----------------------+-----------------------+
+                       | raw output
++----------------------v-----------------------+
+|         agent-output-parser.sh               |
+|     (extracts structured file updates)       |
++----------------------+-----------------------+
+                       | parsed JSON
++----------------------v-----------------------+
+|             write-back.sh                    |
+|  (applies updates to TASKS, HEARTBEAT, etc.) |
++----------------------+-----------------------+
+                       |
++----------------------v-----------------------+
+|          heartbeat-writer.sh                 |
+|    (structured logs + cycles.jsonl)          |
++----------------------------------------------+
+```
+
+### Key Commands
+
+| Command | Description |
+|---------|-------------|
+| `./scripts/loop-runner.sh start` | Start agent loop daemon |
+| `./scripts/loop-runner.sh stop` | Stop agent loop |
+| `./scripts/loop-runner.sh status` | Check loop runner status |
+| `./scripts/babysitter.sh start` | Start auto-restart monitor |
+| `./scripts/dispatch-task.sh "task" --tag TAG` | Create and route a task |
+| `./scripts/task-registry.sh list` | View all tasks |
+| `./scripts/agent-status.sh` | Agent health overview |
+| `./scripts/cost-tracker.sh report` | View token costs |
+| `./scripts/health-check.sh` | Validate agent files |
+| `./scripts/memory-archive.sh` | Archive old HEARTBEAT entries |
+| `bats tests/` | Run test suite |
+
+### Configuration
+
+All config in `.env`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | (required) | API key for claude -p |
+| `CLAUDE_MODEL` | claude-sonnet-4-20250514 | Default model |
+| `LOOP_MAX_CONCURRENT` | 2 | Max parallel agents |
+| `LOOP_WORKING_HOURS_ONLY` | false | Restrict to work hours |
+| `MAX_RESPAWNS` | 3 | Babysitter restart limit |
+| `COST_ALERT_THRESHOLD` | 10.00 | Daily cost limit (USD) |
+
+### Troubleshooting
+
+**Agents not starting:**
+- Check `./scripts/health-check.sh` -- fix any issues
+- Verify ANTHROPIC_API_KEY is set in .env
+- Check `logs/loop-runner.log` for errors
+
+**High costs:**
+- `./scripts/cost-tracker.sh report` -- identify expensive agents
+- Lower LOOP_MAX_CONCURRENT to reduce parallelism
+- Set COST_ALERT_THRESHOLD lower for earlier warnings
+
+**Agent stuck/blocked:**
+- Check `agents/{name}/CONTEXT.md` -- Known Pitfalls section
+- Check `agents/{name}/HEARTBEAT.md` -- recent cycle outcomes
+- Clear the lock: `rmdir /tmp/velvetclaw-lock-{agent_id}`
+
+---
+
 ## Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
