@@ -18,7 +18,7 @@
 
 <!-- readme-gen:start:tech-stack -->
 <p align="center">
-  <img src="https://skillicons.dev/icons?i=ts,nextjs,react,tailwind&theme=dark" alt="Tech Stack" />
+  <img src="https://skillicons.dev/icons?i=bash,linux,github&theme=dark" alt="Tech Stack" />
 </p>
 <!-- readme-gen:end:tech-stack -->
 
@@ -167,7 +167,8 @@ Three built-in automation pipelines that orchestrate agents across departments:
 ```
 📦 velvetclaw
 ├── 📄 manifest.yaml              # Org hierarchy — the master blueprint
-├── 📂 agents/                     # 11 agent definitions
+├── 📄 .env.example                # Environment config template
+├── 📂 agents/                     # 11 agent definitions (12 files each)
 │   ├── 📂 jarvis/                 # Chief Strategy Officer
 │   ├── 📂 atlas/                  # Senior Research Analyst
 │   ├── 📂 trendy/                 # Viral Scout
@@ -179,65 +180,67 @@ Three built-in automation pipelines that orchestrate agents across departments:
 │   ├── 📂 vibe/                   # Senior Motion Designer
 │   ├── 📂 sage/                   # User Success Agent
 │   └── 📂 clip/                   # Clipping Agent
+├── 📂 scripts/                    # Operational scripts (17 total)
+│   ├── 📄 loop-runner.sh          # Orchestrator daemon (tier-based scheduling)
+│   ├── 📄 agent-prompt-assembler.sh  # Reads agent files → claude -p prompt
+│   ├── 📄 agent-output-parser.sh  # Parses claude response → structured JSON
+│   ├── 📄 write-back.sh           # Applies updates to agent state files
+│   ├── 📄 heartbeat-writer.sh     # Structured HEARTBEAT + cycles.jsonl
+│   ├── 📄 dispatch-task.sh        # Create task → route by tag → INBOX
+│   ├── 📄 task-registry.sh        # Global task state CRUD
+│   ├── 📄 vault-write.sh          # Deliverables to vault/ with metadata
+│   ├── 📄 agent-status.sh         # ASCII status table for all agents
+│   ├── 📄 jarvis-prompt-extras.sh # JARVIS org-wide context builder
+│   ├── 📄 escalation-handler.sh   # 3x blocked → escalate to reports_to
+│   ├── 📄 idle-detector.sh        # 5 idle cycles → notify JARVIS
+│   ├── 📄 babysitter.sh           # Auto-restart loop-runner (max 3)
+│   ├── 📄 cost-tracker.sh         # Token usage → CSV + budget alerts
+│   ├── 📄 memory-archive.sh       # Monthly HEARTBEAT rotation
+│   ├── 📄 notify.sh               # macOS Notification Center alerts
+│   └── 📄 health-check.sh         # 7-point agent validation + auto-fix
+├── 📂 tests/                      # Bats test suites
+│   ├── 📄 loop-runner.bats        # Loop runner tests
+│   ├── 📄 prompt-assembler.bats   # Prompt assembly tests
+│   ├── 📄 write-back.bats         # Write-back tests
+│   └── 📄 integration-dispatch.bats # End-to-end dispatch tests
+├── 📂 .velvetclaw/                # Runtime state
+│   └── 📄 task-registry.json      # Global task registry
+├── 📂 vault/                      # Shared deliverables
+│   ├── 📂 research/               # Research outputs
+│   ├── 📂 content/                # Content deliverables
+│   ├── 📂 design/                 # Design assets
+│   ├── 📂 development/            # Code artifacts
+│   ├── 📂 handoffs/               # Cross-department routing
+│   └── 📂 plans/                  # Task plans and roadmaps
+├── 📂 logs/                       # Runtime logs (gitignored)
+│   ├── 📄 loop-runner.log         # Daemon output
+│   └── 📄 cycles.jsonl            # Structured cycle records
 ├── 📄 skill-requirements.yaml     # ClawHub skills to auto-install
 ├── 📂 templates/                  # ClawVault primitive schemas
-│   ├── 📄 task.md                 # Task primitive (status, priority, owner...)
-│   ├── 📄 project.md              # Project coordination
-│   ├── 📄 decision.md             # Decision records
-│   └── 📄 lesson.md               # Learned patterns
 ├── 📂 workflows/                  # Trigger-based automation
-│   ├── 📄 content-pipeline.yaml   # Research → Write → Design → Review
-│   ├── 📄 research-loop.yaml      # Scan → Deep-dive → Action items
-│   └── 📄 qa-monitoring.yaml      # Monitor → Detect → Fix → Verify
 ├── 📂 departments/                # Department coordination rules
-│   ├── 📄 research.yaml
-│   ├── 📄 content.yaml
-│   ├── 📄 development.yaml
-│   ├── 📄 design.yaml
-│   ├── 📄 user-success.yaml
-│   └── 📄 product.yaml
 ├── 📂 memory/                     # Shared organizational memory
-│   ├── 📄 brand-voice.md          # Tone and style guidelines
-│   ├── 📄 tech-stack.md           # Technology decisions
-│   └── 📄 processes.md            # Operational procedures
-├── 📂 bootstrap-skill/            # The org-bootstrap ClawHub skill
-│   └── 📄 SKILL.md                # Bootstrap procedure for any manifest repo
-├── 📄 bootstrap.yaml              # Validation sequence and checks
-└── 📂 dashboard/                  # Mission Control (Next.js + Convex)
-    ├── 📂 app/                    # Next.js app router
-    └── 📂 components/             # Activity Feed, Calendar, Search, Org Chart, Usage
+└── 📂 bootstrap-skill/            # The org-bootstrap ClawHub skill
 ```
 <!-- readme-gen:end:tree -->
 
 ## Each Agent Gets
 
-Every agent directory contains 4 files:
+Every agent directory contains 12 state files:
 
 | File | Purpose |
 |:-----|:--------|
-| `MANIFEST.yaml` | Role, model, skills, triggers, channels, delegation rules |
+| `MANIFEST.yaml` | Role, model, loop config, skills, triggers, delegation rules |
 | `IDENTITY.md` | Persona, voice, communication style |
 | `SOUL.md` | Core directives — 5-7 non-negotiable principles |
 | `MEMORY.md` | Seed memory — initial context and department awareness |
-
-## Mission Control Dashboard
-
-```bash
-cd dashboard
-npm install
-npm run dev
-# Open http://localhost:3000
-```
-
-Five live features:
-
-| Feature | What It Shows |
-|:--------|:-------------|
-| **Activity Feed** | Real-time log of every agent action |
-| **Calendar** | Weekly view of all scheduled tasks |
-| **Global Search** | Semantic search across all agent memories |
-| **Org Chart** | Live hierarchy with heartbeat status |
-| **Usage Tracker** | Token consumption per agent and department |
+| `TASKS.md` | Active work queue with step status |
+| `INBOX.md` | Cross-agent task assignments (pending/processed) |
+| `HEARTBEAT.md` | Structured cycle log (outcome, duration, tokens) |
+| `CONTEXT.md` | Known pitfalls, error patterns, learned constraints |
+| `TOOLS.md` | Available tool definitions |
+| `USER.md` | User-facing configuration |
+| `AGENTS.md` | Known peers and delegation targets |
 
 ## Customization
 
@@ -265,10 +268,11 @@ The `org-bootstrap` skill works with **any** repo following this manifest struct
 | Agent Definitions | ████████████████████ | 100% |
 | Workflows | ████████████████████ | 100% |
 | Documentation | ████████████████████ | 100% |
-| Tests | ░░░░░░░░░░░░░░░░░░░░ | 0% |
+| Operational Scripts | ████████████████████ | 100% |
+| Tests | ████████████████░░░░ | 80% |
 | CI/CD | ░░░░░░░░░░░░░░░░░░░░ | 0% |
 
-> **Overall: 67%** — Solid foundation, needs CI and tests
+> **Overall: 83%** — Fully operational local swarm, needs CI pipeline
 <!-- readme-gen:end:health -->
 
 ---
