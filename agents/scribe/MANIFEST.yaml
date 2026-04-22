@@ -14,7 +14,15 @@ models:
 skills:
   clawhub:
     - coding-agent
-  custom: []
+  custom:
+    - content-strategy
+    - copywriting
+    - copy-editing
+    - email-sequence
+    - ad-creative
+    - lead-magnets
+    - social-content
+    - cold-email
 
 triggers:
   - event: "task_assigned"
@@ -33,6 +41,8 @@ memory:
     - memory/brand-voice.md
     - memory/style-guide.md
     - memory/content-calendar.md
+    - memory/tryambakam-noesis-brand.md
+    - memory/tryambakam-noesis-offerings.md
   private: false
 
 delegation:

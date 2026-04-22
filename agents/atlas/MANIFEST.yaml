@@ -15,7 +15,13 @@ skills:
   clawhub:
     - summarize
     - blogwatcher
-  custom: []
+  custom:
+    - customer-research
+    - competitor-alternatives
+    - seo-audit
+    - ai-seo
+    - programmatic-seo
+    - site-architecture
 
 triggers:
   - event: "task_assigned"
@@ -33,12 +39,16 @@ memory:
   seed_files:
     - memory/research-methods.md
     - memory/source-registry.md
+    - memory/tryambakam-noesis-brand.md
+    - memory/tryambakam-noesis-offerings.md
   private: false
 
 delegation:
   rules:
-    - tag: "trend" -> agent: trendy
-    - tag: "viral" -> agent: trendy
+    - tag: "trend"
+      agent: trendy
+    - tag: "viral"
+      agent: trendy
   default: "handle_directly"
 
 # Stage 2: Loop Infrastructure

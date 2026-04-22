@@ -15,7 +15,9 @@ skills:
   clawhub:
     - video-frames
     - youtube-transcript
-  custom: []
+  custom:
+    - social-content
+    - ad-creative
 
 triggers:
   - event: "task_assigned"
@@ -32,6 +34,8 @@ channels:
 memory:
   seed_files:
     - memory/clip-performance.md
+    - memory/tryambakam-noesis-brand.md
+    - memory/tryambakam-noesis-offerings.md
   private: true
 
 # Stage 2: Loop Infrastructure

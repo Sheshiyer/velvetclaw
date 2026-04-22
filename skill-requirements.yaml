@@ -2,6 +2,11 @@
 # ClawHub skills to auto-install during bootstrap.
 # Global skills are installed for ALL agents.
 # Per-agent skills are installed only for the specified agent.
+#
+# Important:
+# Keep this file ClawHub-only.
+# Repo-local custom skills, including the vendored official marketing skill pack,
+# live under skills/ and are mapped through agents/*/MANIFEST.yaml.
 
 version: "1.0.0"
 

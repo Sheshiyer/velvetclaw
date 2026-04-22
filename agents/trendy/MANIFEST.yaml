@@ -14,7 +14,9 @@ models:
 skills:
   clawhub:
     - summarize
-  custom: []
+  custom:
+    - social-content
+    - marketing-ideas
 
 triggers:
   - event: "heartbeat"
@@ -32,6 +34,7 @@ memory:
   seed_files:
     - memory/trend-sources.md
     - memory/signal-patterns.md
+    - memory/tryambakam-noesis-brand.md
   private: false
 
 delegation:

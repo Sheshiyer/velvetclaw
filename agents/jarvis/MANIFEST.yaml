@@ -16,7 +16,15 @@ skills:
     - orchestrator-enforcer
     - model-usage
     - things-mac
-  custom: []
+  custom:
+    - product-marketing-context
+    - marketing-ideas
+    - marketing-psychology
+    - launch-strategy
+    - pricing-strategy
+    - paid-ads
+    - free-tool-strategy
+    - sales-enablement
 
 triggers:
   - event: "task_created"
@@ -37,17 +45,26 @@ memory:
     - memory/brand-voice.md
     - memory/tech-stack.md
     - memory/processes.md
+    - memory/tryambakam-noesis-brand.md
+    - memory/tryambakam-noesis-offerings.md
   private: false
 
 delegation:
   rules:
-    - tag: "research" -> department: research
-    - tag: "content" -> department: content
-    - tag: "code" -> department: development
-    - tag: "design" -> department: design
-    - tag: "video" -> department: design
-    - tag: "user" -> department: user-success
-    - tag: "clip" -> department: product
+    - tag: "research"
+      department: research
+    - tag: "content"
+      department: content
+    - tag: "code"
+      department: development
+    - tag: "design"
+      department: design
+    - tag: "video"
+      department: design
+    - tag: "user"
+      department: user-success
+    - tag: "clip"
+      department: product
   default: "assess_and_route"
 
 # Stage 2: Loop Infrastructure

@@ -1,0 +1,1325 @@
+{
+  "schema_version": "1.0",
+  "project": {
+    "name": "VelvetClaw Agent Swarm + RAG Memory Integration",
+    "repo_root": "/Volumes/madara/2026/velvetclaw",
+    "generated_on": "2026-02-24",
+    "generated_by": "task-master-planner",
+    "source_tweets": [
+      "https://x.com/SimonHoiberg/status/2025918084591063322",
+      "https://x.com/elvissun/status/2025920521871716562"
+    ],
+    "assumptions": [
+      "PostgreSQL 16 + pgvector can run locally or in Docker on macOS",
+      "n8n is used as API proxy/security layer per Simon's recommendation",
+      "OpenClaw CLI supports --model flag for model routing",
+      "GitHub Actions is available for CI/CD pipeline",
+      "Telegram Bot API is available for notifications (with osascript fallback)",
+      "bats-core is used for bash script testing",
+      "Vitest + Playwright for dashboard testing",
+      "All 11 VelvetClaw agents use the existing HEARTBEAT/TASKS/INBOX/CONTEXT file convention"
+    ],
+    "risks": [
+      "RAM constraints with 11 parallel agents (Elvis hit 16GB ceiling at 4-5 agents)",
+      "pgvector embedding costs at scale (1536-dim embeddings via OpenAI)",
+      "n8n single-point-of-failure for memory API proxy",
+      "Convex removal may break existing dashboard components not yet migrated",
+      "macOS sleep/lid-close kills cron jobs (Gap 2 from Stage 2 analysis)",
+      "Multi-model review pipeline cost (~$190/mo baseline from Elvis's data)"
+    ],
+    "total_tasks": 112,
+    "total_estimated_hours": 912,
+    "phases": 8,
+    "sprints": 16
+  },
+  "phases": [
+    {
+      "phase_id": "P0",
+      "name": "Infrastructure & Database",
+      "objective": "Provision PostgreSQL + pgvector, configure n8n API proxy, establish database schema for vector memory",
+      "sprints": [
+        {
+          "sprint_id": "S1",
+          "duration_weeks": 2,
+          "focus": "PostgreSQL + pgvector setup and core schema",
+          "tasks": [
+            {
+              "id": "P0-S1-01",
+              "title": "Provision PostgreSQL 16 with pgvector extension locally",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 6,
+              "dependencies": [],
+              "deliverable": "PostgreSQL 16 instance running locally (or in Docker) with the pgvector extension installed and enabled on the velvetclaw database.",
+              "acceptance": "Running SELECT extversion FROM pg_extension WHERE extname = 'vector' returns a non-null version string."
+            },
+            {
+              "id": "P0-S1-02",
+              "title": "Create .env configuration for database connection",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-01"],
+              "deliverable": "A .env file at the repo root with DATABASE_URL, PGVECTOR_DIMENSIONS, and DB_POOL_SIZE variables.",
+              "acceptance": "Running psql $DATABASE_URL -c '\\conninfo' exits with code 0 and prints the correct host and database name."
+            },
+            {
+              "id": "P0-S1-03",
+              "title": "Write migration: agents and memory_entries tables",
+              "area": "data",
+              "owner_role": "Data Eng",
+              "est_hours": 8,
+              "dependencies": ["P0-S1-01", "P0-S1-02"],
+              "deliverable": "SQL migration creating agents table (id, name, department, tier) and memory_entries table (id, agent_id FK, content TEXT, embedding vector(1536), created_at, flushed_at, label) with indexes.",
+              "acceptance": "Running the migration against a fresh database returns exit code 0 and \\dt lists both tables with correct column definitions."
+            },
+            {
+              "id": "P0-S1-04",
+              "title": "Seed agents table from manifest.yaml",
+              "area": "data",
+              "owner_role": "Data Eng",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-03"],
+              "deliverable": "A seed script (scripts/seed-agents.ts) that reads manifest.yaml and inserts all 11 VelvetClaw agents into the agents table.",
+              "acceptance": "After running the seed script, SELECT COUNT(*) FROM agents returns exactly 11 and every agent name matches the manifest."
+            },
+            {
+              "id": "P0-S1-05",
+              "title": "Add HNSW index on memory_entries.embedding column",
+              "area": "data",
+              "owner_role": "Data Eng",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-03"],
+              "deliverable": "Migration adding a pgvector HNSW index with m=16, ef_construction=64, and vector_cosine_ops operator class.",
+              "acceptance": "EXPLAIN on cosine similarity query shows Index Scan rather than Seq Scan."
+            },
+            {
+              "id": "P0-S1-06",
+              "title": "Write database connection pool module (TypeScript)",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P0-S1-02", "P0-S1-03"],
+              "deliverable": "TypeScript module at lib/db/pool.ts exporting a pg-pool client singleton with graceful shutdown.",
+              "acceptance": "Unit test calling pool.query('SELECT 1') returns expected result and pool closes cleanly on exit."
+            },
+            {
+              "id": "P0-S1-07",
+              "title": "Add database health check to loop-runner.sh startup",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 4,
+              "dependencies": ["P0-S1-02", "P0-S1-06"],
+              "deliverable": "DB connectivity check in loop-runner.sh that warns but doesn't halt if database is unreachable.",
+              "acceptance": "Starting loop-runner.sh with DATABASE_URL unset prints WARN log line and daemon still starts."
+            }
+          ]
+        },
+        {
+          "sprint_id": "S2",
+          "duration_weeks": 2,
+          "focus": "n8n API proxy and extended schema",
+          "tasks": [
+            {
+              "id": "P0-S2-01",
+              "title": "Install and configure n8n via Docker Compose",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 6,
+              "dependencies": ["P0-S1-01"],
+              "deliverable": "docker-compose.yml running n8n on port 5678 with persistent volume mounts.",
+              "acceptance": "GET http://localhost:5678/healthz returns HTTP 200."
+            },
+            {
+              "id": "P0-S2-02",
+              "title": "Create n8n API proxy workflow for OpenAI embeddings",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P0-S2-01"],
+              "deliverable": "n8n workflow accepting POST /embed that proxies to OpenAI text-embedding-3-small and returns 1536-dim vector.",
+              "acceptance": "curl POST returns JSON array of exactly 1536 floats; API key not present in response."
+            },
+            {
+              "id": "P0-S2-03",
+              "title": "Create n8n rate-limiting and auth middleware",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P0-S2-01"],
+              "deliverable": "n8n sub-workflow validating VELVETCLAW_INTERNAL_TOKEN header; rejects unauthorized with 401.",
+              "acceptance": "curl without token returns 401; with correct token returns 200."
+            },
+            {
+              "id": "P0-S2-04",
+              "title": "Define extended pgvector schema: labels, metadata, flush_status",
+              "area": "data",
+              "owner_role": "Data Eng",
+              "est_hours": 8,
+              "dependencies": ["P0-S1-03"],
+              "deliverable": "Migration adding label ENUM, metadata JSONB, flush_status ENUM to memory_entries, plus memory_sessions table.",
+              "acceptance": "Migration runs cleanly; \\d memory_entries shows all new columns with correct types."
+            },
+            {
+              "id": "P0-S2-05",
+              "title": "Create n8n workflow: store memory entry with embedding",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P0-S2-02", "P0-S2-04", "P0-S1-06"],
+              "deliverable": "n8n workflow POST /memory/store that embeds content and inserts into memory_entries.",
+              "acceptance": "curl POST returns {id: uuid} and DB row count increments by 1."
+            },
+            {
+              "id": "P0-S2-06",
+              "title": "Write TypeScript client SDK for n8n memory API",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P0-S2-03", "P0-S2-05"],
+              "deliverable": "lib/memory/client.ts exporting storeMemory() and searchMemory() functions calling n8n endpoints.",
+              "acceptance": "Integration test stores one entry and retrieves it via search, confirming round-trip."
+            },
+            {
+              "id": "P0-S2-07",
+              "title": "Document n8n workflow exports in vault/development/",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 4,
+              "dependencies": ["P0-S2-05", "P0-S2-06"],
+              "deliverable": "Exported n8n workflow JSON files committed to vault/development/n8n-workflows/.",
+              "acceptance": "Importing the JSON files into a fresh n8n instance produces three active workflows with zero errors."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "P1",
+      "name": "RAG Memory System",
+      "objective": "Build vector memory with search tools, memory flush CRON, and per-agent integration",
+      "sprints": [
+        {
+          "sprint_id": "S3",
+          "duration_weeks": 2,
+          "focus": "Vector storage and search tool",
+          "tasks": [
+            {
+              "id": "P1-S3-01",
+              "title": "Build vector search n8n workflow for top-K cosine similarity",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P0-S2-05", "P0-S2-06"],
+              "deliverable": "n8n workflow POST /memory/search accepting agent_id, query, top_k, optional label_filter.",
+              "acceptance": "After storing 10 test entries, search returns exactly top_k results in descending similarity order."
+            },
+            {
+              "id": "P1-S3-02",
+              "title": "Implement memory labeling strategy per agent type",
+              "area": "data",
+              "owner_role": "Data Eng",
+              "est_hours": 6,
+              "dependencies": ["P0-S2-04", "P0-S2-06"],
+              "deliverable": "lib/memory/labeling.ts classifying content into episodic/semantic/procedural/working based on agent role.",
+              "acceptance": "Unit tests covering all 11 agents assert correct default label with 100% pass rate."
+            },
+            {
+              "id": "P1-S3-03",
+              "title": "Create memory_search tool wrapper for agent integration",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P1-S3-01", "P1-S3-02"],
+              "deliverable": "lib/memory/search-tool.ts exposing memorySearch(agentId, sessionContext, topK) for OpenClaw tool registry.",
+              "acceptance": "Calling memorySearch('atlas', 'AI research trends', 5) returns 5 objects with content, label, similarity_score, created_at."
+            },
+            {
+              "id": "P1-S3-04",
+              "title": "Register memory_search tool in all 11 agent TOOLS.md files",
+              "area": "data",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P1-S3-03"],
+              "deliverable": "All 11 TOOLS.md files updated with Memory Tools section documenting memory_search.",
+              "acceptance": "grep for 'memory_search' across agents/*/TOOLS.md returns exactly 11 matching files."
+            },
+            {
+              "id": "P1-S3-05",
+              "title": "Build session context assembler prepending top-K memories to prompt",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 10,
+              "dependencies": ["P1-S3-03"],
+              "deliverable": "lib/memory/session-context.ts that searches memory and returns formatted context block for agent prompt.",
+              "acceptance": "Test simulating jarvis starting a cycle returns string containing '## Relevant Memory' section with entries."
+            },
+            {
+              "id": "P1-S3-06",
+              "title": "Add memory retrieval to loop-runner.sh agent invocation hook",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 8,
+              "dependencies": ["P1-S3-05", "P0-S1-07"],
+              "deliverable": "invoke_agent() in loop-runner.sh calls session-context assembler before OpenClaw run.",
+              "acceptance": "Loop-runner logs '[INFO] memory context loaded for <agent_id>: N entries' for each cycle."
+            },
+            {
+              "id": "P1-S3-07",
+              "title": "Write integration test: store-then-retrieve round trip for all agents",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P1-S3-03", "P1-S3-05"],
+              "deliverable": "tests/memory-integration.test.ts verifying store+search round trip for each of 11 agents.",
+              "acceptance": "npm test -- memory-integration passes all 11 per-agent test cases."
+            }
+          ]
+        },
+        {
+          "sprint_id": "S4",
+          "duration_weeks": 2,
+          "focus": "Memory flush CRON and per-agent integration",
+          "tasks": [
+            {
+              "id": "P1-S4-01",
+              "title": "Build MEMORY.md parser extracting structured entries for flush",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P0-S2-06"],
+              "deliverable": "lib/memory/md-parser.ts reading MEMORY.md and returning array of {content, raw_section} objects.",
+              "acceptance": "Given fixture with 5 sections, parser returns exactly 5 objects with non-empty content."
+            },
+            {
+              "id": "P1-S4-02",
+              "title": "Build memory flush service: MEMORY.md to pgvector pipeline",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 10,
+              "dependencies": ["P1-S4-01", "P0-S2-05", "P1-S3-02"],
+              "deliverable": "lib/memory/flush-service.ts that reads MEMORY.md, labels entries, stores in pgvector, marks as flushed.",
+              "acceptance": "Flush for jarvis with 3-entry MEMORY.md creates 3 rows with flush_status='flushed' and non-null embeddings."
+            },
+            {
+              "id": "P1-S4-03",
+              "title": "Create memory-flush CRON script integrated with loop-runner",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 8,
+              "dependencies": ["P1-S4-02", "P0-S1-07"],
+              "deliverable": "scripts/memory-flush-cron.sh running flush for all 11 agents on configurable schedule (default 30m).",
+              "acceptance": "Manual trigger produces success log line for each agent and no ERROR lines."
+            },
+            {
+              "id": "P1-S4-04",
+              "title": "Implement MEMORY.md rotation: archive flushed, keep working memory",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P1-S4-02"],
+              "deliverable": "Flush service extension moving flushed sections to MEMORY_ARCHIVE.md, resetting MEMORY.md to pending only.",
+              "acceptance": "After flush, MEMORY.md entry count decreases by flushed count; MEMORY_ARCHIVE.md grows proportionally."
+            },
+            {
+              "id": "P1-S4-05",
+              "title": "Update HEARTBEAT.md to track memory flush status",
+              "area": "data",
+              "owner_role": "Data Eng",
+              "est_hours": 6,
+              "dependencies": ["P1-S4-03"],
+              "deliverable": "HEARTBEAT.md template and all 11 files updated with Memory section (last_flush, entries_flushed_today, total).",
+              "acceptance": "After flush, every agents/*/HEARTBEAT.md contains non-empty 'Last Flush' timestamp."
+            },
+            {
+              "id": "P1-S4-06",
+              "title": "Wire memory context into agent-loop.yaml workflow",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P1-S3-05", "P1-S4-02"],
+              "deliverable": "agent-loop.yaml updated with memory_retrieve step before read_tasks and memory_store after write_results.",
+              "acceptance": "YAML lint passes; dry-run for clawd logs both memory steps without errors."
+            },
+            {
+              "id": "P1-S4-07",
+              "title": "Write E2E smoke test: full loop cycle with memory for one agent",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 10,
+              "dependencies": ["P1-S4-03", "P1-S4-05", "P1-S4-06", "P1-S3-06"],
+              "deliverable": "tests/e2e-memory-loop.test.ts simulating atlas full cycle: seed, flush, new session retrieval.",
+              "acceptance": "E2E test exits 0, logs 'memory context contains flushed entry', DB row count > 0."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "P2",
+      "name": "Agent Orchestration & Swarm",
+      "objective": "Git worktrees per agent, tmux sessions, task registry, JARVIS dispatch, department routing",
+      "sprints": [
+        {
+          "sprint_id": "S5",
+          "duration_weeks": 2,
+          "focus": "Worktree + tmux management",
+          "tasks": [
+            {
+              "id": "P2-S5-01",
+              "title": "Design git worktree layout and naming convention",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 4,
+              "dependencies": [],
+              "deliverable": "Architecture decision record at vault/decisions/worktree-layout.md defining .worktrees/{agent-id}/{task-slug} scheme.",
+              "acceptance": "Document lists all 11 agents with tier assignments and unique branch naming pattern."
+            },
+            {
+              "id": "P2-S5-02",
+              "title": "Implement worktree lifecycle manager script",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 8,
+              "dependencies": ["P2-S5-01"],
+              "deliverable": "scripts/worktree-manager.sh with create, list, prune, and status subcommands.",
+              "acceptance": "Create produces worktree at .worktrees/clawd/fix-auth-bug; prune removes it after branch merge."
+            },
+            {
+              "id": "P2-S5-03",
+              "title": "Provision tmux session factory for per-agent sessions",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 6,
+              "dependencies": ["P2-S5-01"],
+              "deliverable": "scripts/tmux-sessions.sh with spawn, attach, kill, and list-all subcommands.",
+              "acceptance": "Spawn creates session velvetclaw-sentinel visible in tmux ls with correct working directory."
+            },
+            {
+              "id": "P2-S5-04",
+              "title": "Integrate worktree+tmux into loop-runner.sh invoke_agent",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 8,
+              "dependencies": ["P2-S5-02", "P2-S5-03"],
+              "deliverable": "Updated invoke_agent() calling worktree-manager create and tmux-sessions spawn before openclaw run.",
+              "acceptance": "Starting loop-runner creates worktree directory and running tmux session for test agent."
+            },
+            {
+              "id": "P2-S5-05",
+              "title": "Implement mid-task agent redirection via tmux send-keys",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P2-S5-03"],
+              "deliverable": "scripts/agent-redirect.sh sending instruction as keystrokes to agent's tmux session.",
+              "acceptance": "Running redirect sends visible text into tmux pane within 2 seconds."
+            },
+            {
+              "id": "P2-S5-06",
+              "title": "Add worktree stale-detection and auto-prune cron hook",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 6,
+              "dependencies": ["P2-S5-02"],
+              "deliverable": "Daily cron calling worktree-manager.sh prune --older-than 24h with STALE_WORKTREE_HOURS config.",
+              "acceptance": "Stale worktree with no uncommitted changes is removed; worktrees with changes are skipped with warning."
+            },
+            {
+              "id": "P2-S5-07",
+              "title": "Dashboard widget: live worktree and tmux status per agent",
+              "area": "frontend",
+              "owner_role": "Frontend Eng",
+              "est_hours": 10,
+              "dependencies": ["P2-S5-02", "P2-S5-03"],
+              "deliverable": "dashboard/components/worktree-status.tsx polling /api/worktrees every 30s.",
+              "acceptance": "Component renders 11 agents and updates to reflect new tmux session within one poll interval."
+            }
+          ]
+        },
+        {
+          "sprint_id": "S6",
+          "duration_weeks": 2,
+          "focus": "Task registry and agent spawning",
+          "tasks": [
+            {
+              "id": "P2-S6-01",
+              "title": "Design .clawdbot/active-tasks.json registry schema",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 4,
+              "dependencies": ["P2-S5-01"],
+              "deliverable": "JSON Schema at .clawdbot/task-registry.schema.json with id, agent_id, status, worktree_path, model, retry_count.",
+              "acceptance": "ajv validate passes with zero errors against sample with all 11 agents."
+            },
+            {
+              "id": "P2-S6-02",
+              "title": "Implement task registry CRUD library",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P2-S6-01"],
+              "deliverable": "scripts/task-registry.sh with add, update-status, list, get subcommands; atomic writes via temp+mv.",
+              "acceptance": "Add creates entry with status queued; update-status changes only status and updated_at."
+            },
+            {
+              "id": "P2-S6-03",
+              "title": "Implement model-specific agent spawning commands",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P2-S6-02", "P2-S5-04"],
+              "deliverable": "scripts/spawn-agent.sh resolving model from task registry, defaulting to gpt-5.3-codex with gemini fallback.",
+              "acceptance": "Override to gemini logs gemini flag; no override uses gpt-5.3-codex."
+            },
+            {
+              "id": "P2-S6-04",
+              "title": "Wire task registry into worktree and tmux lifecycle events",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P2-S6-02", "P2-S5-02", "P2-S5-03"],
+              "deliverable": "Hooks auto-updating task status on worktree creation (queued->running), tmux exit (running->done).",
+              "acceptance": "Full lifecycle produces queued, running, done state progression with correct timestamps."
+            },
+            {
+              "id": "P2-S6-05",
+              "title": "Implement JARVIS task dispatcher from INBOX.md to task registry",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 10,
+              "dependencies": ["P2-S6-02", "P2-S6-03"],
+              "deliverable": "agents/jarvis/dispatch.sh reading INBOX.md delegation requests and creating registry entries.",
+              "acceptance": "DELEGATE: clawd | refactor-vault creates active-tasks entry and INBOX notice in clawd's inbox."
+            },
+            {
+              "id": "P2-S6-06",
+              "title": "Add department-level task routing via manifest.yaml leads",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P2-S6-05"],
+              "deliverable": "dispatch.sh reading departments/*.yaml to resolve department-to-lead mappings.",
+              "acceptance": "DELEGATE: content-dept | draft-blog registers under scribe (content lead)."
+            },
+            {
+              "id": "P2-S6-07",
+              "title": "Expose task registry to dashboard via /api/tasks endpoint",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P2-S6-02", "P2-S5-07"],
+              "deliverable": "Next.js API route reading .clawdbot/active-tasks.json; updated activity-feed component.",
+              "acceptance": "GET /api/tasks returns valid JSON; new task appears in dashboard within 30 seconds."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "P3",
+      "name": "CI/CD & Multi-Model Code Review",
+      "objective": "GitHub Actions CI pipeline, 3-model review (Codex/Gemini/Claude), auto-respawn, definition-of-done",
+      "sprints": [
+        {
+          "sprint_id": "S7",
+          "duration_weeks": 2,
+          "focus": "CI pipeline and testing infrastructure",
+          "tasks": [
+            {
+              "id": "P3-S7-01",
+              "title": "Scaffold GitHub Actions CI with lint and TypeScript checks",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 6,
+              "dependencies": ["P2-S6-02"],
+              "deliverable": ".github/workflows/ci.yml with lint and typecheck jobs on pull_request.",
+              "acceptance": "PR with type error fails typecheck job with annotation; clean PR passes both."
+            },
+            {
+              "id": "P3-S7-02",
+              "title": "Add unit test infrastructure with Vitest",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 8,
+              "dependencies": ["P3-S7-01"],
+              "deliverable": "Vitest installed, vitest.config.ts configured, baseline task-registry tests.",
+              "acceptance": "npm test exits 0 with at least 5 passing tests."
+            },
+            {
+              "id": "P3-S7-03",
+              "title": "Add unit test job to CI workflow",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 4,
+              "dependencies": ["P3-S7-02", "P3-S7-01"],
+              "deliverable": "unit-tests job in ci.yml with coverage upload and 60% threshold.",
+              "acceptance": "Job appears in CI run; fails if coverage drops below 60%."
+            },
+            {
+              "id": "P3-S7-04",
+              "title": "Implement E2E tests with Playwright for dashboard",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 12,
+              "dependencies": ["P3-S7-02", "P2-S6-07", "P2-S5-07"],
+              "deliverable": "Playwright config and e2e/dashboard.spec.ts covering dashboard load, worktree widget, activity feed.",
+              "acceptance": "npx playwright test exits 0 with all assertions passing."
+            },
+            {
+              "id": "P3-S7-05",
+              "title": "Add E2E test job to CI with Playwright headless",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 6,
+              "dependencies": ["P3-S7-04", "P3-S7-01"],
+              "deliverable": "e2e job in ci.yml starting Next.js, running Playwright, uploading HTML report artifact.",
+              "acceptance": "Job succeeds on green PR; fails on broken selector; HTML report downloadable."
+            },
+            {
+              "id": "P3-S7-06",
+              "title": "Enforce screenshot requirement for UI PRs",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 6,
+              "dependencies": ["P3-S7-01"],
+              "deliverable": "screenshot-check job using actions/github-script to verify image in PR body for dashboard/ changes.",
+              "acceptance": "UI PR without screenshot fails; with screenshot passes."
+            },
+            {
+              "id": "P3-S7-07",
+              "title": "Create PR automation script with template enforcement",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 6,
+              "dependencies": ["P3-S7-06", "P2-S6-04"],
+              "deliverable": "scripts/create-pr.sh using gh pr create with template, updating task registry to pr-open.",
+              "acceptance": "Script creates PR with pre-filled body; task status shows pr-open."
+            }
+          ]
+        },
+        {
+          "sprint_id": "S8",
+          "duration_weeks": 2,
+          "focus": "Multi-model code review and auto-respawn",
+          "tasks": [
+            {
+              "id": "P3-S8-01",
+              "title": "Implement Codex reviewer for edge-case detection",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 12,
+              "dependencies": ["P3-S7-01", "P2-S6-03"],
+              "deliverable": "review-codex.yml workflow posting Edge Case Analysis PR comment via gpt-5.3-codex.",
+              "acceptance": "Job posts PR comment with Edge Case Analysis header; exits non-zero on BLOCKING_ISSUE."
+            },
+            {
+              "id": "P3-S8-02",
+              "title": "Implement Gemini reviewer for security scanning",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 12,
+              "dependencies": ["P3-S7-01", "P2-S6-03"],
+              "deliverable": "review-gemini.yml posting Security Analysis PR comment via gemini.",
+              "acceptance": "Hardcoded secret in diff causes non-zero exit and flagged comment."
+            },
+            {
+              "id": "P3-S8-03",
+              "title": "Implement Claude validation reviewer as final gate",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 10,
+              "dependencies": ["P3-S8-01", "P3-S8-02"],
+              "deliverable": "review-claude.yml running after both reviews, posting LGTM or REQUEST_CHANGES verdict.",
+              "acceptance": "Runs only after both reviews succeed; posts verdict comment; exits non-zero on REQUEST_CHANGES."
+            },
+            {
+              "id": "P3-S8-04",
+              "title": "Implement definition-of-done merge gate",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 8,
+              "dependencies": ["P3-S8-03", "P3-S7-06"],
+              "deliverable": "merge-gate.yml blocking merge without all 3 review comments + screenshot check.",
+              "acceptance": "Missing any review comment blocks merge; all present allows merge."
+            },
+            {
+              "id": "P3-S8-05",
+              "title": "Implement auto-respawn with max 3 retry attempts",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 10,
+              "dependencies": ["P2-S6-02", "P2-S5-03", "P2-S5-04"],
+              "deliverable": "scripts/respawn-agent.sh checking retry_count, re-spawning if <= 3, marking failed-permanently otherwise.",
+              "acceptance": "Three exits increment retry_count to 3; fourth sets failed-permanently with INBOX notice."
+            },
+            {
+              "id": "P3-S8-06",
+              "title": "Wire auto-respawn into loop-runner exit handler",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 8,
+              "dependencies": ["P3-S8-05", "P2-S5-04"],
+              "deliverable": "Exit detection in loop-runner.sh calling respawn-agent.sh; GitHub issue on permanent failure.",
+              "acceptance": "Killed tmux session triggers respawn within CHECK_INTERVAL; 3 fails opens GitHub issue."
+            },
+            {
+              "id": "P3-S8-07",
+              "title": "Integrate definition-of-done into vault task template",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 6,
+              "dependencies": ["P3-S8-04", "P3-S8-05"],
+              "deliverable": "Updated templates/task.md with 7-item DoD checklist.",
+              "acceptance": "New task file contains all 7 checkboxes; markdownlint confirms valid format."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "P4",
+      "name": "Monitoring & Notifications",
+      "objective": "Agent babysitter CRON, health checks, Telegram/osascript alerts, log rotation",
+      "sprints": [
+        {
+          "sprint_id": "S9",
+          "duration_weeks": 2,
+          "focus": "Agent monitoring CRON",
+          "tasks": [
+            {
+              "id": "P4-S9-01",
+              "title": "Build agent-babysitter.sh core health check script",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 8,
+              "dependencies": [],
+              "deliverable": "Script reading all 11 agents' HEARTBEAT.md files and emitting structured JSON health report.",
+              "acceptance": "Output is valid JSON listing each agent's state, last cycle, and failure count; verified with jq."
+            },
+            {
+              "id": "P4-S9-02",
+              "title": "Add tmux session liveness detection to babysitter",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 6,
+              "dependencies": ["P4-S9-01"],
+              "deliverable": "tmux session checks mapping each agent to expected session name.",
+              "acceptance": "Killed session for clawd shows tmux_alive: false; others show true."
+            },
+            {
+              "id": "P4-S9-03",
+              "title": "Integrate gh CLI open-PR and CI status checks",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 6,
+              "dependencies": ["P4-S9-01"],
+              "deliverable": "babysitter.sh appending pr_count and ci_status to health report via gh CLI.",
+              "acceptance": "With open PR, JSON shows non-zero pr_count and correct ci_status; completes under 10s."
+            },
+            {
+              "id": "P4-S9-04",
+              "title": "Implement auto-respawn for failed agents with max-3 guard",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 10,
+              "dependencies": ["P4-S9-02"],
+              "deliverable": "Respawn logic tracking count in state file; refuses fourth respawn.",
+              "acceptance": "Three runs produce three respawn logs; fourth logs 'max respawns reached' without spawning."
+            },
+            {
+              "id": "P4-S9-05",
+              "title": "Wire babysitter into loop-runner as 10-minute sub-job",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 4,
+              "dependencies": ["P4-S9-04", "P4-S9-03"],
+              "deliverable": "10-minute babysitter invocation in loop-runner.sh logging to logs/babysitter.log.",
+              "acceptance": "After loop-runner start, babysitter.log has health report within 11 minutes."
+            },
+            {
+              "id": "P4-S9-06",
+              "title": "Create task-registry.json population from TASKS.md files",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 8,
+              "dependencies": [],
+              "deliverable": "parse-tasks.sh reading all agents' TASKS.md, emitting per-agent counts.",
+              "acceptance": "Output passes JSON schema validation; adding task to any TASKS.md updates count on re-run."
+            },
+            {
+              "id": "P4-S9-07",
+              "title": "Add HEARTBEAT.md structured-parse library",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 6,
+              "dependencies": ["P4-S9-01"],
+              "deliverable": "scripts/lib/parse-heartbeat.sh extracting State, Last Cycle, Cycles Today as env vars.",
+              "acceptance": "Sourcing with jarvis HEARTBEAT.md exports correct HB_STATE, HB_LAST_CYCLE, HB_CYCLES_TODAY."
+            }
+          ]
+        },
+        {
+          "sprint_id": "S10",
+          "duration_weeks": 2,
+          "focus": "Notification system and alerting",
+          "tasks": [
+            {
+              "id": "P4-S10-01",
+              "title": "Build Telegram notification dispatcher script",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 6,
+              "dependencies": ["P4-S9-05"],
+              "deliverable": "scripts/notify-telegram.sh sending formatted messages via Bot API.",
+              "acceptance": "Running with valid token delivers message to Telegram chat within 5 seconds."
+            },
+            {
+              "id": "P4-S10-02",
+              "title": "Define alert-trigger rules and human-attention filter",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 8,
+              "dependencies": ["P4-S9-04", "P4-S10-01"],
+              "deliverable": "Alert decision layer: max-respawn, all-CI-failing, 5+ agents blocked.",
+              "acceptance": "6 blocked agents triggers one critical alert; healthy state produces no alerts."
+            },
+            {
+              "id": "P4-S10-03",
+              "title": "Add PR-ready Telegram notification on new PR detection",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 6,
+              "dependencies": ["P4-S9-03", "P4-S10-01"],
+              "deliverable": "New-PR detection comparing state file, sending Telegram info with PR URL.",
+              "acceptance": "New PR triggers exactly one message with URL; no duplicate on re-run."
+            },
+            {
+              "id": "P4-S10-04",
+              "title": "Implement macOS Notification Center fallback via osascript",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 4,
+              "dependencies": ["P4-S10-01"],
+              "deliverable": "Fallback to osascript display notification when TELEGRAM_BOT_TOKEN is unset.",
+              "acceptance": "With token unset, script triggers macOS notification banner and logs 'fallback: osascript'."
+            },
+            {
+              "id": "P4-S10-05",
+              "title": "Build alert deduplication with 30-minute suppression",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 6,
+              "dependencies": ["P4-S10-02"],
+              "deliverable": "Alert fingerprint tracking in logs/alert-state.json with 30m suppression window.",
+              "acceptance": "Same alert in 6 consecutive runs produces exactly one Telegram message."
+            },
+            {
+              "id": "P4-S10-06",
+              "title": "Add log rotation for HEARTBEAT.md and babysitter.log",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 6,
+              "dependencies": ["P4-S9-07"],
+              "deliverable": "scripts/rotate-logs.sh archiving 7+ day old entries and truncating babysitter.log.",
+              "acceptance": "200 rows dated 8+ days ago moved to archive; live HEARTBEAT retains only last 7 days."
+            },
+            {
+              "id": "P4-S10-07",
+              "title": "Write E2E integration test for monitoring stack",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 10,
+              "dependencies": ["P4-S10-02", "P4-S10-03", "P4-S10-04", "P4-S10-05", "P4-S10-06"],
+              "deliverable": "scripts/test-monitoring.sh with fixture agents, mock notify, 10+ test cases.",
+              "acceptance": "Exits 0 with all assertions passing covering healthy/blocked/failed/max-respawn."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "P5",
+      "name": "Dashboard Pivot to Local-First",
+      "objective": "Replace Convex with local file reads, add memory search UI, swarm view, PR pipeline status",
+      "sprints": [
+        {
+          "sprint_id": "S11",
+          "duration_weeks": 2,
+          "focus": "Core dashboard: agent status, CRON, vault, inbox",
+          "tasks": [
+            {
+              "id": "P5-S11-01",
+              "title": "Bootstrap local-first dashboard server with file-read API",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 12,
+              "dependencies": [],
+              "deliverable": "Express.js server with read-only GET endpoints serving parsed HEARTBEAT, TASKS, manifest as JSON.",
+              "acceptance": "GET /api/agents returns 11 agent objects; server refuses POST/PUT/DELETE with 405."
+            },
+            {
+              "id": "P5-S11-02",
+              "title": "Implement SSE endpoint for real-time agent status",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 10,
+              "dependencies": ["P5-S11-01"],
+              "deliverable": "GET /api/agents/stream using chokidar file watching, pushing events within 2s of change.",
+              "acceptance": "Modifying jarvis HEARTBEAT.md delivers SSE event to connected client within 2 seconds."
+            },
+            {
+              "id": "P5-S11-03",
+              "title": "Build Agent Status Grid UI component",
+              "area": "frontend",
+              "owner_role": "Frontend Eng",
+              "est_hours": 10,
+              "dependencies": ["P5-S11-02"],
+              "deliverable": "AgentGrid component consuming SSE stream with color-coded state badges per agent.",
+              "acceptance": "Mock SSE cycling agent states updates badge color within one render cycle; all 11 cards render."
+            },
+            {
+              "id": "P5-S11-04",
+              "title": "Build Visual CRON Manager panel",
+              "area": "frontend",
+              "owner_role": "Frontend Eng",
+              "est_hours": 12,
+              "dependencies": ["P5-S11-01"],
+              "deliverable": "CronManager showing agent tier, interval, next-run countdown, on/off toggle.",
+              "acceptance": "Shows tier_1 at 5m and tier_2_lead at 10m from manifest; countdown decrements live."
+            },
+            {
+              "id": "P5-S11-05",
+              "title": "Build Department Vault Browser panel",
+              "area": "frontend",
+              "owner_role": "Frontend Eng",
+              "est_hours": 8,
+              "dependencies": ["P5-S11-01"],
+              "deliverable": "VaultBrowser with directory tree and inline markdown preview pane.",
+              "acceptance": "Clicking vault/research/ file renders markdown with correct headings."
+            },
+            {
+              "id": "P5-S11-06",
+              "title": "Build Inbox Activity Feed panel",
+              "area": "frontend",
+              "owner_role": "Frontend Eng",
+              "est_hours": 8,
+              "dependencies": ["P5-S11-02"],
+              "deliverable": "InboxFeed polling /api/inbox every 30s, grouped by target agent with priority badges.",
+              "acceptance": "New INBOX.md entry appears in feed within 31 seconds without page reload."
+            },
+            {
+              "id": "P5-S11-07",
+              "title": "Remove Convex SDK and wire dashboard to local server",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P5-S11-01", "P5-S11-03", "P5-S11-04", "P5-S11-05", "P5-S11-06"],
+              "deliverable": "All Convex imports removed; data fetching re-pointed to localhost:3001.",
+              "acceptance": "npm run build completes with zero Convex references; dashboard loads with local data."
+            }
+          ]
+        },
+        {
+          "sprint_id": "S12",
+          "duration_weeks": 2,
+          "focus": "Advanced: memory search, swarm view, PR pipeline",
+          "tasks": [
+            {
+              "id": "P5-S12-01",
+              "title": "Build Memory Explorer with agent file browser",
+              "area": "frontend",
+              "owner_role": "Frontend Eng",
+              "est_hours": 12,
+              "dependencies": ["P5-S11-01"],
+              "deliverable": "MemoryExplorer with agent selector, file list, and markdown renderer.",
+              "acceptance": "Selecting atlas then MEMORY.md renders content; switching to TASKS.md loads in <500ms."
+            },
+            {
+              "id": "P5-S12-02",
+              "title": "Add vector DB query UI for memory search",
+              "area": "frontend",
+              "owner_role": "Frontend Eng",
+              "est_hours": 14,
+              "dependencies": ["P5-S12-01"],
+              "deliverable": "MemorySearch with FTS5 index over agent .md files, ranked results with similarity scores.",
+              "acceptance": "Query 'brand voice' returns results in <800ms; index auto-rebuilds on file changes."
+            },
+            {
+              "id": "P5-S12-03",
+              "title": "Build Agent Swarm Status org hierarchy visualization",
+              "area": "frontend",
+              "owner_role": "Frontend Eng",
+              "est_hours": 12,
+              "dependencies": ["P5-S11-03"],
+              "deliverable": "SwarmView rendering manifest.yaml hierarchy as tree diagram with live state colors.",
+              "acceptance": "Displays 6 departments with correct leads/members; state changes update node colors via SSE."
+            },
+            {
+              "id": "P5-S12-04",
+              "title": "Build PR Review Pipeline Status panel",
+              "area": "frontend",
+              "owner_role": "Frontend Eng",
+              "est_hours": 10,
+              "dependencies": ["P5-S11-01", "P4-S9-03"],
+              "deliverable": "PRPipeline listing open PRs with CI status badges, refreshing every 60s.",
+              "acceptance": "Open PR renders with title, branch, correct CI badge matching gh output."
+            },
+            {
+              "id": "P5-S12-05",
+              "title": "Build Worktree Management view",
+              "area": "frontend",
+              "owner_role": "Frontend Eng",
+              "est_hours": 8,
+              "dependencies": ["P5-S11-01"],
+              "deliverable": "WorktreeView listing active worktrees with branch, HEAD commit, agent association.",
+              "acceptance": "Active worktree listed with correct branch and SHA matching git worktree list."
+            },
+            {
+              "id": "P5-S12-06",
+              "title": "Add cost and token tracking panel with budget alerts",
+              "area": "frontend",
+              "owner_role": "Frontend Eng",
+              "est_hours": 10,
+              "dependencies": ["P5-S11-01"],
+              "deliverable": "CostTracker parsing token usage from logs, per-agent bars with budget threshold.",
+              "acceptance": "Fixture data produces correct per-agent bars; 90% budget shows yellow warning."
+            },
+            {
+              "id": "P5-S12-07",
+              "title": "Dashboard integration test: full smoke test suite",
+              "area": "frontend",
+              "owner_role": "Frontend Eng",
+              "est_hours": 12,
+              "dependencies": ["P5-S12-01", "P5-S12-02", "P5-S12-03", "P5-S12-04", "P5-S12-05", "P5-S12-06"],
+              "deliverable": "Playwright E2E covering all 10 panels against fixtures-backed local server.",
+              "acceptance": "npx playwright test passes all 10 smoke tests with zero failures and no console errors."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "P6",
+      "name": "Agent Intelligence — Ralph Loop V2 + Model Routing",
+      "objective": "Context-aware re-prompting, model routing, proactive task discovery, reward signals",
+      "sprints": [
+        {
+          "sprint_id": "S13",
+          "duration_weeks": 2,
+          "focus": "Ralph Loop V2 and context-aware prompting",
+          "tasks": [
+            {
+              "id": "P6-S13-01",
+              "title": "Build JARVIS failure-context analyzer module",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 12,
+              "dependencies": [],
+              "deliverable": "Module in agents/jarvis/ reading HEARTBEAT failures and enriching with CONTEXT.md business data.",
+              "acceptance": "Simulated failure produces re-prompt with original error, CONTEXT constraint, and department goal."
+            },
+            {
+              "id": "P6-S13-02",
+              "title": "Implement context-aware re-prompting in agent-loop cycle",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 10,
+              "dependencies": ["P6-S13-01"],
+              "deliverable": "Updated agent-loop.yaml wiring failure analyzer into next cycle's prompt injection.",
+              "acceptance": "Failed step N on cycle C produces re-prompt on C+1 with failure reason and CONTEXT rule."
+            },
+            {
+              "id": "P6-S13-03",
+              "title": "Add retry ledger to TASKS.md schema",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P6-S13-01"],
+              "deliverable": "Extended task.md template with retry_ledger array; loop-runner writes entries on retry.",
+              "acceptance": "Three failed retries produce TASKS.md retry_ledger with three entries each having re_prompt_strategy."
+            },
+            {
+              "id": "P6-S13-04",
+              "title": "Implement JARVIS escalation with unblock recommendation",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P6-S13-02", "P6-S13-03"],
+              "deliverable": "Escalation handler synthesizing actionable unblock recommendation to blocked agent's INBOX.",
+              "acceptance": "3-consecutive-blocked triggers INBOX entry with at least one actionable step."
+            },
+            {
+              "id": "P6-S13-05",
+              "title": "Build prompt-pattern logger for successful completions",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P6-S13-02"],
+              "deliverable": "Logger writing to vault/development/prompt-patterns.jsonl on successful step completion.",
+              "acceptance": "Five successful steps produce five records with agent_id, task_type, prompt_hash."
+            },
+            {
+              "id": "P6-S13-06",
+              "title": "Add reward signal hooks for CI pass and PR merge",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P6-S13-05", "P3-S8-04"],
+              "deliverable": "GitHub Actions step and loop-runner hook emitting events to reward-signals.jsonl.",
+              "acceptance": "Successful CI appends ci_passed record within 60 seconds of job completion."
+            },
+            {
+              "id": "P6-S13-07",
+              "title": "Wire reward signals into weekly evolve-cycle template",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P6-S13-06"],
+              "deliverable": "evolve-cycle.md with reward_signal_summary populated from reward-signals.jsonl.",
+              "acceptance": "Weekly evolution output includes at least one reward_signal_summary entry."
+            }
+          ]
+        },
+        {
+          "sprint_id": "S14",
+          "duration_weeks": 2,
+          "focus": "Model routing and proactive task discovery",
+          "tasks": [
+            {
+              "id": "P6-S14-01",
+              "title": "Implement model router with per-task-type dispatch table",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 12,
+              "dependencies": ["P6-S13-01"],
+              "deliverable": "Model router resolving task tags to model: Codex for backend, Claude for frontend, Gemini for design.",
+              "acceptance": "tags=[code,backend] returns codex; tags=[design,ui] returns gemini; tags=[frontend,git] returns claude."
+            },
+            {
+              "id": "P6-S14-02",
+              "title": "Integrate model router into loop-runner invocation",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 8,
+              "dependencies": ["P6-S14-01"],
+              "deliverable": "invoke_agent() calling model router and passing --model flag.",
+              "acceptance": "Design-tagged agent log shows gemini; code-tagged shows codex."
+            },
+            {
+              "id": "P6-S14-03",
+              "title": "Build morning Sentry scan task-discovery trigger",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 10,
+              "dependencies": ["P6-S14-02"],
+              "deliverable": "Daily 09:00 CRON trigger: SENTINEL scans sentry-tagged issues, spawns fix agents for CLAWD.",
+              "acceptance": "Two open Sentry issues produce two INBOX entries in clawd's inbox."
+            },
+            {
+              "id": "P6-S14-04",
+              "title": "Add post-meeting feature-request injection workflow",
+              "area": "product",
+              "owner_role": "Product Eng",
+              "est_hours": 8,
+              "dependencies": ["P6-S14-02"],
+              "deliverable": "Workflow trigger parsing meeting notes via CLIP, appending feature requests to JARVIS INBOX.",
+              "acceptance": "Meeting notes with 3 feature bullets produce 3 JARVIS INBOX entries with tag=feature."
+            },
+            {
+              "id": "P6-S14-05",
+              "title": "Implement evening changelog generation trigger",
+              "area": "product",
+              "owner_role": "Product Eng",
+              "est_hours": 8,
+              "dependencies": ["P6-S14-02", "P6-S13-06"],
+              "deliverable": "Daily 18:00 CRON: SCRIBE generates CHANGELOG from completed tasks and prompt patterns.",
+              "acceptance": "Five completed tasks produce non-empty CHANGELOG referencing at least three task IDs."
+            },
+            {
+              "id": "P6-S14-06",
+              "title": "Build JARVIS morning-cycle proactive task orchestration",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 10,
+              "dependencies": ["P6-S14-03", "P6-S14-04"],
+              "deliverable": "JARVIS aggregating Sentry, meeting, overnight vault inputs, deduplicating and delegating.",
+              "acceptance": "6 inbox entries across sources produce 6 delegated entries with no duplicates."
+            },
+            {
+              "id": "P6-S14-07",
+              "title": "Extend manifest.yaml with model routing and discovery config",
+              "area": "backend",
+              "owner_role": "Backend Eng",
+              "est_hours": 6,
+              "dependencies": ["P6-S14-01", "P6-S14-06"],
+              "deliverable": "manifest.yaml with model_routing and proactive_discovery sections.",
+              "acceptance": "Bootstrap validation passes; both new keys are structurally valid per YAML lint."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "P7",
+      "name": "Testing, Security & Deployment",
+      "objective": "Fill 0% test gap, credential management, vault access control, Docker Compose, production readiness",
+      "sprints": [
+        {
+          "sprint_id": "S15",
+          "duration_weeks": 2,
+          "focus": "Unit and integration tests",
+          "tasks": [
+            {
+              "id": "P7-S15-01",
+              "title": "Write unit tests for loop-runner.sh core functions",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 10,
+              "dependencies": ["P2-S5-04", "P6-S13-03"],
+              "deliverable": "tests/unit/test-loop-runner.bats covering discover_agents, working_hours, invoke_agent, tier intervals.",
+              "acceptance": "bats exits 0 with all tests passing; at least 8 distinct test cases."
+            },
+            {
+              "id": "P7-S15-02",
+              "title": "Write unit tests for worktree manager and task registry",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 8,
+              "dependencies": ["P2-S5-02", "P2-S6-02"],
+              "deliverable": "tests/unit/test-worktree.bats and test-task-registry.bats.",
+              "acceptance": "Both files pass with zero failures covering create/list/cleanup and add/status-transition."
+            },
+            {
+              "id": "P7-S15-03",
+              "title": "Write unit tests for memory flush and search tool",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 8,
+              "dependencies": ["P1-S4-02", "P1-S3-03"],
+              "deliverable": "tests/unit/test-memory.bats covering write, flush, and search operations.",
+              "acceptance": "All tests pass; written entry is retrievable via search within same run."
+            },
+            {
+              "id": "P7-S15-04",
+              "title": "Write unit tests for inbox routing and monitoring CRON",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 8,
+              "dependencies": ["P4-S9-05", "P2-S6-06"],
+              "deliverable": "tests/unit/test-inbox-routing.bats testing parsing, transitions, escalation, CRON math.",
+              "acceptance": "10-entry fixture triggers escalation path; CRON interval tests assert correct tier calculations."
+            },
+            {
+              "id": "P7-S15-05",
+              "title": "Write integration test for agent spawn-to-PR flow",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 12,
+              "dependencies": ["P7-S15-01", "P7-S15-02"],
+              "deliverable": "tests/integration/test-spawn-pr-flow.sh: sandboxed CLAWD+SENTINEL fixture, loop once, verify PR stub.",
+              "acceptance": "Exits 0; vault/development/ contains review record and pr-stub within 30 seconds."
+            },
+            {
+              "id": "P7-S15-06",
+              "title": "Write integration test for memory write-flush-search round-trip",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 10,
+              "dependencies": ["P7-S15-03"],
+              "deliverable": "tests/integration/test-memory-roundtrip.sh: write 3 entries, flush, search each.",
+              "acceptance": "Exits 0; all 3 entries retrievable; DB file has 3+ rows; completes in <60s."
+            },
+            {
+              "id": "P7-S15-07",
+              "title": "Write integration test for cross-department vault handoff",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 10,
+              "dependencies": ["P7-S15-04", "P7-S15-05"],
+              "deliverable": "tests/integration/test-vault-handoff.sh: ATLAS→SCRIBE handoff via vault.",
+              "acceptance": "Exits 0; vault/content/ draft contains string from ATLAS research fixture."
+            }
+          ]
+        },
+        {
+          "sprint_id": "S16",
+          "duration_weeks": 2,
+          "focus": "E2E tests, security, and deployment",
+          "tasks": [
+            {
+              "id": "P7-S16-01",
+              "title": "Write E2E test for full content pipeline workflow",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 14,
+              "dependencies": ["P7-S15-07"],
+              "deliverable": "tests/e2e/test-content-pipeline.sh: full ATLAS→SCRIBE→PIXEL pipeline.",
+              "acceptance": "Exits 0; vault/content/published/ has output; all intermediate artifacts present."
+            },
+            {
+              "id": "P7-S16-02",
+              "title": "Write E2E test for full QA monitoring loop",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 12,
+              "dependencies": ["P7-S15-05"],
+              "deliverable": "tests/e2e/test-qa-monitoring-loop.sh: bug→triage→fix→verify pipeline.",
+              "acceptance": "Exits 0; verification-report.md exists with bug ID; fix step status=done."
+            },
+            {
+              "id": "P7-S16-03",
+              "title": "Implement credential management and API key rotation",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 10,
+              "dependencies": ["P0-S1-02", "P6-S14-07"],
+              "deliverable": "scripts/rotate-keys.sh with per-agent slots, expiry tracking, rotation reminders.",
+              "acceptance": "91-day-old key produces JARVIS INBOX entry with api_key_rotation_required."
+            },
+            {
+              "id": "P7-S16-04",
+              "title": "Implement vault access control and department isolation",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 8,
+              "dependencies": ["P7-S16-03"],
+              "deliverable": "vault-access.yaml policy with loop-runner enforcement preventing cross-department writes.",
+              "acceptance": "Research agent writing to vault/content/ without handoff token logs access_denied."
+            },
+            {
+              "id": "P7-S16-05",
+              "title": "Build Docker Compose stack for full VelvetClaw",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 16,
+              "dependencies": ["P7-S16-03", "P7-S16-04"],
+              "deliverable": "docker-compose.yml with PostgreSQL+pgvector, n8n, dashboard; health checks and named volumes.",
+              "acceptance": "docker compose up -d shows all services healthy; dashboard at :3000, n8n at :5678 within 60s."
+            },
+            {
+              "id": "P7-S16-06",
+              "title": "Create production readiness checklist and preflight script",
+              "area": "infra",
+              "owner_role": "DevOps",
+              "est_hours": 8,
+              "dependencies": ["P7-S16-05", "P7-S16-03", "P7-S16-04"],
+              "deliverable": "scripts/preflight-check.sh validating env vars, Docker health, API keys, vault perms, workflows.",
+              "acceptance": "Full config exits 0 with READY; missing OPENAI_API_KEY exits 1 with FAIL message."
+            },
+            {
+              "id": "P7-S16-07",
+              "title": "Wire all test suites into GitHub Actions CI pipeline",
+              "area": "qa",
+              "owner_role": "QA Eng",
+              "est_hours": 10,
+              "dependencies": ["P7-S15-01", "P7-S15-02", "P7-S15-03", "P7-S15-04", "P7-S15-05", "P7-S15-06", "P7-S15-07", "P7-S16-01", "P7-S16-02", "P7-S16-06"],
+              "deliverable": ".github/workflows/ci.yml running bats unit, integration, and E2E in sequence with preflight gate.",
+              "acceptance": "PR triggers CI; unit failure blocks integration; E2E runs after integration passes."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

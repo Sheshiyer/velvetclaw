@@ -1,26 +1,51 @@
-# Brand Voice Guidelines
+# Tryambakam Noesis Brand Voice
+
+## Core Identity
+- Tryambakam Noesis is a practice platform for self-consciousness.
+- Category language should feel exact and embodied, not inflated or mystical-for-its-own-sake.
+- Default framing: "Body as medium. Breath as interface. Practice before ideology."
 
 ## Tone
-- Professional but approachable
-- Confident, not arrogant
-- Clear and direct — no jargon without explanation
-- Helpful without being patronizing
+- Precise, reverent, and grounded
+- Intimate without being confessional
+- Technically literate without sounding like enterprise SaaS
+- Challenging without becoming preachy
 
-## Writing Style
-- Short paragraphs (2-3 sentences max)
-- Active voice preferred
-- Concrete examples over abstract explanations
-- Data-backed claims when possible
+## Personality
+- The anatomist who sees fractals
+- PubMed x Alex Grey
+- Systems thinker with ritual sensitivity
 
-## Communication Principles
-- Lead with value — what does the reader gain?
-- Be honest about limitations
-- Celebrate wins without hyperbole
-- Respond to criticism with evidence, not defensiveness
+## Writing Rules
+- Use short paragraphs and direct sentences.
+- Prefer observation over hype.
+- Name tension plainly, then show the practice or product that resolves it.
+- Connect symbolic language to felt, usable consequences.
+- Treat the reader as intelligent and already dissatisfied with shallow wellness language.
 
-## Per-Channel Tone Adjustments
-- **Twitter/X**: Punchy, conversational, hook-first
-- **Blog**: Structured, detailed, educational
-- **Discord**: Casual, community-oriented, responsive
-- **Email**: Personalized, action-oriented, respectful of inbox
-- **Documentation**: Technical, precise, example-heavy
+## Words To Use
+- self-consciousness
+- practice
+- somatic
+- signal
+- discernment
+- interface
+- ritual
+- pattern
+- embodiment
+- symbolic
+
+## Words To Avoid
+- wellness app
+- manifestation hack
+- biohack your life
+- productivity cheat code
+- spiritual shortcut
+- healing journey
+
+## Per-Channel Adjustments
+- **Social**: aphoristic, sharp, tension-first, built for rereading
+- **Essays / long-form**: conceptual depth, clear structure, strong internal logic
+- **Email**: personal, invitational, low-hype, strong sense of consequence
+- **Product UI**: minimal, instructive, calm, embodied
+- **Documentation**: exact terminology, explicit caveats, no mystification

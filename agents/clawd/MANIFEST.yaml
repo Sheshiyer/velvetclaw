@@ -18,7 +18,10 @@ skills:
     - review-pr
     - merge-pr
     - gh-issues
-  custom: []
+  custom:
+    - analytics-tracking
+    - ab-test-setup
+    - schema-markup
 
 triggers:
   - event: "task_assigned"
@@ -41,14 +44,19 @@ memory:
     - memory/tech-stack.md
     - memory/coding-standards.md
     - memory/architecture.md
+    - memory/tryambakam-noesis-offerings.md
   private: false
 
 delegation:
   rules:
-    - tag: "qa" -> agent: sentinel
-    - tag: "test" -> agent: sentinel
-    - tag: "uptime" -> agent: sentinel
-    - tag: "monitor" -> agent: sentinel
+    - tag: "qa"
+      agent: sentinel
+    - tag: "test"
+      agent: sentinel
+    - tag: "uptime"
+      agent: sentinel
+    - tag: "monitor"
+      agent: sentinel
   default: "handle_directly"
 
 # Stage 2: Loop Infrastructure

@@ -15,7 +15,14 @@ skills:
   clawhub:
     - healthcheck
     - review-pr
-  custom: []
+  custom:
+    - page-cro
+    - form-cro
+    - popup-cro
+    - signup-flow-cro
+    - paywall-upgrade-cro
+    - analytics-tracking
+    - ab-test-setup
 
 triggers:
   - event: "heartbeat"
@@ -36,6 +43,7 @@ memory:
     - memory/monitoring-targets.md
     - memory/qa-checklist.md
     - memory/incident-log.md
+    - memory/tryambakam-noesis-offerings.md
   private: false
 
 delegation:

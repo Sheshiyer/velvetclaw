@@ -14,7 +14,15 @@ models:
 skills:
   clawhub:
     - discord
-  custom: []
+  custom:
+    - email-sequence
+    - cold-email
+    - onboarding-cro
+    - churn-prevention
+    - referral-program
+    - revops
+    - signup-flow-cro
+    - paywall-upgrade-cro
 
 triggers:
   - event: "task_assigned"
@@ -34,6 +42,8 @@ channels:
 memory:
   seed_files:
     - memory/user-segments.md
+    - memory/tryambakam-noesis-brand.md
+    - memory/tryambakam-noesis-offerings.md
   private: true
 
 # Stage 2: Loop Infrastructure

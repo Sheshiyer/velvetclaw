@@ -1,0 +1,282 @@
+[
+  {
+    "id": "P6-S13-01",
+    "title": "Build JARVIS failure-context analyzer module",
+    "area": "backend",
+    "owner_role": "Backend Eng",
+    "est_hours": 12,
+    "dependencies": ["P0-bootstrap", "P2-loop-runner"],
+    "deliverable": "A module in agents/jarvis/ that reads HEARTBEAT.md failure entries and enriches them with CONTEXT.md business-layer data before re-prompting.",
+    "acceptance": "Given a simulated failed step in HEARTBEAT.md, the module produces a re-prompt payload that includes the original error, the relevant CONTEXT.md constraint, and the department-level goal; verified by unit assertions on the enriched payload structure."
+  },
+  {
+    "id": "P6-S13-02",
+    "title": "Implement context-aware re-prompting in agent-loop cycle",
+    "area": "backend",
+    "owner_role": "Backend Eng",
+    "est_hours": 10,
+    "dependencies": ["P6-S13-01"],
+    "deliverable": "Updated agent-loop.yaml execute_step and write_result sections wired to call the failure-context analyzer and inject enriched context into the next cycle's prompt.",
+    "acceptance": "An agent that fails step N on cycle C produces a re-prompt on cycle C+1 whose prompt string contains the failure reason and the matched CONTEXT.md rule; asserted via loop integration test."
+  },
+  {
+    "id": "P6-S13-03",
+    "title": "Add Ralph Loop V2 retry ledger to TASKS.md schema",
+    "area": "backend",
+    "owner_role": "Backend Eng",
+    "est_hours": 6,
+    "dependencies": ["P6-S13-01"],
+    "deliverable": "Extended task.md template with retry_ledger field (array of {cycle, error, re_prompt_strategy, outcome}) and updated loop-runner.sh to write ledger entries on each retry.",
+    "acceptance": "After three failed retries on a synthetic blocked step, TASKS.md contains a retry_ledger array with three entries each bearing a non-empty re_prompt_strategy value."
+  },
+  {
+    "id": "P6-S13-04",
+    "title": "Implement JARVIS escalation with unblock recommendation",
+    "area": "backend",
+    "owner_role": "Backend Eng",
+    "est_hours": 8,
+    "dependencies": ["P6-S13-02", "P6-S13-03"],
+    "deliverable": "JARVIS escalation handler that, upon receiving a blocked step alert, synthesizes an unblock recommendation message written to the reporting agent's INBOX.md instead of a bare escalation notice.",
+    "acceptance": "Triggering a 3-consecutive-blocked-cycles condition causes JARVIS to append an INBOX.md entry to the blocked agent containing at minimum one actionable suggested step; verified by reading the target INBOX.md post-run."
+  },
+  {
+    "id": "P6-S13-05",
+    "title": "Build prompt-pattern logger for successful step completions",
+    "area": "backend",
+    "owner_role": "Backend Eng",
+    "est_hours": 8,
+    "dependencies": ["P6-S13-02"],
+    "deliverable": "A logger that writes structured prompt-pattern records to vault/development/prompt-patterns.jsonl whenever a step completes successfully, capturing agent ID, task type, prompt structure hash, and outcome.",
+    "acceptance": "Running five distinct successful agent steps produces five appended records in prompt-patterns.jsonl, each containing agent_id, task_type, and prompt_hash fields with non-null values."
+  },
+  {
+    "id": "P6-S13-06",
+    "title": "Add reward signal hooks for CI pass and PR merge events",
+    "area": "backend",
+    "owner_role": "Backend Eng",
+    "est_hours": 8,
+    "dependencies": ["P6-S13-05", "P3-github-actions"],
+    "deliverable": "GitHub Actions workflow step and loop-runner hook that emit reward signal events (ci_passed, pr_merged, review_approved) to vault/development/reward-signals.jsonl with timestamp and linked step ID.",
+    "acceptance": "A successful CI run against a test PR appends a ci_passed record to reward-signals.jsonl within 60 seconds of job completion; verified by tail of the file post-run."
+  },
+  {
+    "id": "P6-S13-07",
+    "title": "Wire reward signals into weekly evolve-cycle template",
+    "area": "backend",
+    "owner_role": "Backend Eng",
+    "est_hours": 6,
+    "dependencies": ["P6-S13-06"],
+    "deliverable": "Updated templates/evolve-cycle.md that includes a reward_signal_summary section auto-populated from reward-signals.jsonl, surfacing top-performing prompt patterns in the weekly evolution questions.",
+    "acceptance": "The weekly evolution script reads reward-signals.jsonl and populates at least one reward_signal_summary entry in the evolve-cycle output document; verified by diff of a generated evolve-cycle.md against the blank template."
+  },
+  {
+    "id": "P6-S14-01",
+    "title": "Implement model router with per-task-type dispatch table",
+    "area": "backend",
+    "owner_role": "Backend Eng",
+    "est_hours": 12,
+    "dependencies": ["P6-S13-01", "P1-manifest"],
+    "deliverable": "A model-router module (scripts/model-router.sh or Node module) that reads task tags and agent role from MANIFEST.yaml and returns the appropriate model endpoint: Codex for backend/logic, Claude Code for frontend/git, Gemini for design/UI.",
+    "acceptance": "Given tags=[code,backend], router returns openai/gpt-5.3-codex; given tags=[design,ui], router returns google-gemini-cli/gemini-2.5-flash; given tags=[frontend,git], router returns claude-code; all three assertions pass in a model-router unit test."
+  },
+  {
+    "id": "P6-S14-02",
+    "title": "Integrate model router into loop-runner agent invocation",
+    "area": "backend",
+    "owner_role": "Backend Eng",
+    "est_hours": 8,
+    "dependencies": ["P6-S14-01"],
+    "deliverable": "Updated invoke_agent() in scripts/loop-runner.sh that calls the model router before spawning an agent cycle and passes the resolved model endpoint as a --model flag to the openclaw run command.",
+    "acceptance": "Loop runner logs show the model endpoint appended to each invoke line; a design-tagged agent's log line contains gemini and a code-tagged agent's log line contains codex; verified by grepping loop-runner.log."
+  },
+  {
+    "id": "P6-S14-03",
+    "title": "Build morning Sentry scan task-discovery agent trigger",
+    "area": "backend",
+    "owner_role": "Backend Eng",
+    "est_hours": 10,
+    "dependencies": ["P6-S14-02", "P3-sentinel-setup"],
+    "deliverable": "A scheduled trigger (cron 09:00 daily) in workflows/qa-monitoring.yaml that invokes SENTINEL to scan GitHub issues tagged sentry/error, spawn fix-agent tasks for each open error, and write them to CLAWD's INBOX.md.",
+    "acceptance": "With two synthetic open Sentry-tagged GitHub issues present, the morning scan produces two INBOX.md entries in agents/clawd/INBOX.md within the first cron cycle after 09:00; verified by entry count post-trigger."
+  },
+  {
+    "id": "P6-S14-04",
+    "title": "Add post-meeting feature-request task injection workflow",
+    "area": "product",
+    "owner_role": "Product Eng",
+    "est_hours": 8,
+    "dependencies": ["P6-S14-02"],
+    "deliverable": "A workflow trigger (event: meeting_notes_created) that invokes CLIP to parse meeting notes from vault/product/meeting-notes.md, extract feature requests, and append them as structured INBOX.md entries to JARVIS's inbox for triage.",
+    "acceptance": "Placing a meeting-notes.md file with three feature bullet points in vault/product/ triggers CLIP to produce three INBOX.md entries in agents/jarvis/INBOX.md with tag=feature and source=meeting_notes; verified by entry count and tag values."
+  },
+  {
+    "id": "P6-S14-05",
+    "title": "Implement evening changelog and docs generation trigger",
+    "area": "product",
+    "owner_role": "Product Eng",
+    "est_hours": 8,
+    "dependencies": ["P6-S14-02", "P6-S13-06"],
+    "deliverable": "A cron trigger (18:00 daily) that invokes SCRIBE to read reward-signals.jsonl and completed TASKS.md entries from the day, generate a CHANGELOG-YYYY-MM-DD.md entry in vault/content/, and update docs with any new patterns from prompt-patterns.jsonl.",
+    "acceptance": "Running the evening trigger with five simulated completed tasks produces a non-empty CHANGELOG file in vault/content/ whose entries reference at least three of the five completed task IDs; verified by file existence and grep."
+  },
+  {
+    "id": "P6-S14-06",
+    "title": "Build proactive task-discovery orchestration in JARVIS morning cycle",
+    "area": "backend",
+    "owner_role": "Backend Eng",
+    "est_hours": 10,
+    "dependencies": ["P6-S14-03", "P6-S14-04"],
+    "deliverable": "JARVIS TASKS.md morning-cycle step that aggregates inbox entries from the Sentry scan, meeting notes, and any overnight vault handoffs, deduplicates, prioritizes, and delegates each item to the correct department INBOX.md within a single 5-minute cycle.",
+    "acceptance": "With 6 inbox entries across Sentry and meeting-notes sources, JARVIS's morning cycle produces exactly 6 delegated INBOX.md entries distributed across department agents with no duplicates; verified by summing INBOX.md entry counts across all 11 agents."
+  },
+  {
+    "id": "P6-S14-07",
+    "title": "Extend manifest.yaml with model routing and proactive discovery config",
+    "area": "backend",
+    "owner_role": "Backend Eng",
+    "est_hours": 6,
+    "dependencies": ["P6-S14-01", "P6-S14-06"],
+    "deliverable": "Updated manifest.yaml with a model_routing section (per-tag model assignments) and a proactive_discovery section (enabled flags, cron times, and source definitions for morning scan, post-meeting, and evening changelog).",
+    "acceptance": "Running the bootstrap sequence against the updated manifest.yaml completes without validation errors and the model_routing and proactive_discovery keys are present and structurally valid per a YAML schema lint check."
+  },
+  {
+    "id": "P7-S15-01",
+    "title": "Write unit tests for loop-runner.sh core functions",
+    "area": "qa",
+    "owner_role": "QA Eng",
+    "est_hours": 10,
+    "dependencies": ["P2-loop-runner", "P6-S13-03"],
+    "deliverable": "Bash unit test file (tests/unit/test-loop-runner.bats) covering discover_agents, is_within_working_hours, invoke_agent guard logic, and tier interval assignment using the bats-core framework.",
+    "acceptance": "Running bats tests/unit/test-loop-runner.bats exits 0 with all tests passing and covers at least 8 distinct test cases across the four targeted functions."
+  },
+  {
+    "id": "P7-S15-02",
+    "title": "Write unit tests for worktree manager and task registry",
+    "area": "qa",
+    "owner_role": "QA Eng",
+    "est_hours": 8,
+    "dependencies": ["P3-worktree", "P6-S13-03"],
+    "deliverable": "Unit test suite (tests/unit/test-worktree.bats and tests/unit/test-task-registry.bats) testing worktree creation, checkout, and cleanup; and task registry add, update-status, and dependency-check operations.",
+    "acceptance": "Both test files execute via bats with zero failures; worktree tests cover at least create, list, and cleanup paths; task registry tests cover add, status-transition, and depends_on guard."
+  },
+  {
+    "id": "P7-S15-03",
+    "title": "Write unit tests for memory flush and search tool",
+    "area": "qa",
+    "owner_role": "QA Eng",
+    "est_hours": 8,
+    "dependencies": ["P4-memory", "P6-S13-03"],
+    "deliverable": "Unit test suite (tests/unit/test-memory.bats) covering memory write, flush-to-sqlite, and keyword search operations with fixture MEMORY.md files.",
+    "acceptance": "All tests pass via bats; tests assert that a written memory entry is retrievable via search within the same test run and that flush produces a SQLite database file with at least one row."
+  },
+  {
+    "id": "P7-S15-04",
+    "title": "Write unit tests for inbox routing and monitoring CRON logic",
+    "area": "qa",
+    "owner_role": "QA Eng",
+    "est_hours": 8,
+    "dependencies": ["P2-loop-runner", "P6-S14-03"],
+    "deliverable": "Unit test suite (tests/unit/test-inbox-routing.bats) testing inbox entry parsing, pending-to-processed transitions, overflow escalation at 10-entry threshold, and monitoring CRON interval math.",
+    "acceptance": "All tests pass via bats; a synthetic 10-entry INBOX.md fixture triggers the escalation path in the parser; CRON interval math tests assert correct elapsed-time calculations for all three tiers."
+  },
+  {
+    "id": "P7-S15-05",
+    "title": "Write integration test for agent spawn-to-PR flow",
+    "area": "qa",
+    "owner_role": "QA Eng",
+    "est_hours": 12,
+    "dependencies": ["P7-S15-01", "P7-S15-02", "P6-S14-02"],
+    "deliverable": "Integration test script (tests/integration/test-spawn-pr-flow.sh) that boots a sandboxed CLAWD+SENTINEL pair with fixture TASKS.md, runs the loop once, and asserts that CLAWD creates a PR stub and SENTINEL writes a review record to vault/development/.",
+    "acceptance": "The integration test script exits 0 when run against a fresh fixture workspace; vault/development/ contains a review record and a pr-stub file within 30 seconds of test invocation."
+  },
+  {
+    "id": "P7-S15-06",
+    "title": "Write integration test for memory write-flush-search round-trip",
+    "area": "qa",
+    "owner_role": "QA Eng",
+    "est_hours": 10,
+    "dependencies": ["P7-S15-03"],
+    "deliverable": "Integration test (tests/integration/test-memory-roundtrip.sh) that writes three distinct memory entries via the memory module, triggers flush, then asserts each entry is retrievable by keyword search from the SQLite index.",
+    "acceptance": "Test exits 0; all three entries are returned by their respective keyword queries; the SQLite file created during flush contains at least three rows; test completes within 60 seconds."
+  },
+  {
+    "id": "P7-S15-07",
+    "title": "Write integration test for cross-department vault handoff",
+    "area": "qa",
+    "owner_role": "QA Eng",
+    "est_hours": 10,
+    "dependencies": ["P7-S15-04", "P7-S15-05"],
+    "deliverable": "Integration test (tests/integration/test-vault-handoff.sh) that simulates ATLAS writing a research deliverable to vault/research/, SCRIBE reading it via vault/handoffs/, and SCRIBE producing a content draft in vault/content/.",
+    "acceptance": "Test exits 0; vault/content/ contains a draft file whose content includes a string extracted from the original ATLAS research fixture; handoff completes within two simulated loop cycles."
+  },
+  {
+    "id": "P7-S16-01",
+    "title": "Write E2E test for full content pipeline workflow",
+    "area": "qa",
+    "owner_role": "QA Eng",
+    "est_hours": 14,
+    "dependencies": ["P7-S15-07", "P5-content-pipeline"],
+    "deliverable": "End-to-end test (tests/e2e/test-content-pipeline.sh) that triggers the content-pipeline workflow with a synthetic research brief, runs all agent cycles through ATLAS, SCRIBE, and PIXEL handoffs, and asserts final published content lands in vault/content/published/.",
+    "acceptance": "Test exits 0; vault/content/published/ contains a non-empty output file within 10 simulated cycles; each intermediate handoff artifact (research-brief, content-draft, design-brief) is present in its respective vault directory."
+  },
+  {
+    "id": "P7-S16-02",
+    "title": "Write E2E test for full QA monitoring loop",
+    "area": "qa",
+    "owner_role": "QA Eng",
+    "est_hours": 12,
+    "dependencies": ["P7-S15-05", "P5-qa-monitoring"],
+    "deliverable": "End-to-end test (tests/e2e/test-qa-monitoring-loop.sh) that injects a synthetic bug report into SENTINEL's INBOX.md, runs the qa-monitoring workflow through triage, CLAWD fix, and SENTINEL verification steps, and asserts a verification-report.md lands in vault/development/.",
+    "acceptance": "Test exits 0; vault/development/verification-report.md exists and contains the synthetic bug ID; the TASKS.md step for fix_implementation has status=done; full loop completes within 15 simulated cycles."
+  },
+  {
+    "id": "P7-S16-03",
+    "title": "Implement credential management and API key rotation system",
+    "area": "infra",
+    "owner_role": "DevOps",
+    "est_hours": 10,
+    "dependencies": ["P0-bootstrap", "P6-S14-07"],
+    "deliverable": "A scripts/rotate-keys.sh script and updated .env.example that supports per-agent API key slots (OPENAI_API_KEY_JARVIS, etc.), key expiry tracking in vault/handoffs/key-registry.yaml, and an automated rotation reminder written to JARVIS's INBOX.md when keys approach 90-day age.",
+    "acceptance": "Running rotate-keys.sh check with a synthetic key-registry.yaml containing one key dated 91 days ago produces a JARVIS INBOX.md entry with subject=api_key_rotation_required; verified by grep on the INBOX.md after script execution."
+  },
+  {
+    "id": "P7-S16-04",
+    "title": "Implement vault access control and department isolation",
+    "area": "infra",
+    "owner_role": "DevOps",
+    "est_hours": 8,
+    "dependencies": ["P2-vault", "P7-S16-03"],
+    "deliverable": "A vault-access.yaml policy file and enforcement check in loop-runner.sh that prevents an agent from writing to a vault directory outside its own department without an explicit handoff token in vault/handoffs/.",
+    "acceptance": "Attempting to invoke an agent from the research department to write directly to vault/content/ (without a handoff token) causes loop-runner.sh to log an access_denied entry and skip the write; verified by log grep and absence of the file in vault/content/."
+  },
+  {
+    "id": "P7-S16-05",
+    "title": "Build Docker Compose stack for PostgreSQL + pgvector + n8n + dashboard",
+    "area": "infra",
+    "owner_role": "DevOps",
+    "est_hours": 16,
+    "dependencies": ["P7-S16-03", "P7-S16-04"],
+    "deliverable": "A docker-compose.yml at repo root defining services for PostgreSQL 16 with pgvector extension, n8n workflow automation, and the Next.js dashboard; with health checks, named volumes, and a .env-driven configuration layer.",
+    "acceptance": "Running docker compose up -d exits 0; docker compose ps shows all four services as healthy; the dashboard is reachable at localhost:3000 and n8n is reachable at localhost:5678 within 60 seconds of startup."
+  },
+  {
+    "id": "P7-S16-06",
+    "title": "Create production readiness checklist and pre-flight validation script",
+    "area": "infra",
+    "owner_role": "DevOps",
+    "est_hours": 8,
+    "dependencies": ["P7-S16-05", "P7-S16-03", "P7-S16-04"],
+    "deliverable": "A scripts/preflight-check.sh script and docs/production-checklist.md that validate: all required env vars set, Docker services healthy, API keys non-empty, vault directory permissions correct, loop-runner accessible, and at least one workflow parseable.",
+    "acceptance": "Running preflight-check.sh against a fully configured environment exits 0 and prints READY; running it with OPENAI_API_KEY unset exits 1 and prints a line containing FAIL: OPENAI_API_KEY; both outcomes verified in CI."
+  },
+  {
+    "id": "P7-S16-07",
+    "title": "Wire all test suites into GitHub Actions CI pipeline",
+    "area": "qa",
+    "owner_role": "QA Eng",
+    "est_hours": 10,
+    "dependencies": ["P7-S15-01", "P7-S15-02", "P7-S15-03", "P7-S15-04", "P7-S15-05", "P7-S15-06", "P7-S15-07", "P7-S16-01", "P7-S16-02", "P7-S16-06"],
+    "deliverable": "A .github/workflows/ci.yml that runs bats unit tests, integration tests, and E2E tests in sequence on every push and pull request, with the preflight-check.sh gating the E2E stage and test results published as GitHub Actions summary annotations.",
+    "acceptance": "Opening a test pull request triggers the CI workflow; the Actions tab shows unit, integration, and E2E jobs completing in order; a deliberate failure in test-loop-runner.bats causes the unit job to fail and blocks the integration job from starting."
+  }
+]
